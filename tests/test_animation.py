@@ -80,20 +80,28 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual(landed.clip, "idle")
         self.assertFalse(landed.transition)
 
-    def test_turn_mirrors_at_the_authored_midpoint_without_restarting_on_polls(self):
+    def test_facing_flips_current_frame_immediately_without_restarting_playback(self):
         library, _ = self.library()
+        for state in ("idle", "moving"):
+            with self.subTest(state=state):
+                player = ClipPlayer(library)
+                player.advance(0, state, facing=1)
+                before = player.advance(.10, state, facing=1)
+                flipped = player.advance(.10, state, facing=-1)
+                self.assertEqual((flipped.clip, flipped.index, flipped.image), (before.clip, before.index, before.image))
+                self.assertTrue(flipped.mirror)
+                self.assertFalse(flipped.transition)
+                self.assertFalse(player.advance(.101, state, facing=1).mirror)
+                self.assertEqual(player.advance(.12, state, facing=-1).index, 1)
+
         player = ClipPlayer(library)
-        player.advance(0, "idle", facing=1)
-        start = player.advance(.02, "idle", facing=-1)
-        self.assertEqual(start.clip, "turn")
-        self.assertFalse(start.mirror)
-        middle = player.advance(.105, "idle", facing=-1)
-        self.assertEqual(middle.clip, "turn")
-        self.assertTrue(middle.mirror)
-        final = player.advance(.19, "idle", facing=-1)
-        self.assertEqual(final.clip, "idle")
-        self.assertTrue(final.mirror)
-        self.assertEqual(player.advance(1.2, "idle", facing=-1).clip, "idle")
+        player.advance(0, "idle")
+        player.advance(.02, "moving")
+        before = player.advance(.10, "moving", facing=1)
+        flipped = player.advance(.10, "moving", facing=-1)
+        self.assertEqual((flipped.clip, flipped.index), ("takeoff", before.index))
+        self.assertTrue(flipped.mirror)
+        self.assertEqual(player.advance(.19, "moving", facing=-1).clip, "moving")
 
     def test_drag_immediately_interrupts_a_poke_or_optional_gesture(self):
         library, _ = self.library()

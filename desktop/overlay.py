@@ -1005,9 +1005,8 @@ class Overlay(QtWidgets.QWidget):
             transform.rotate(max(-16., min(16., self.flight_bank)))
             transform.scale(-1. if self.clip_sample.mirror else 1., 1.)
         else:
-            turn = max(.045, abs(pose["facing"])) * (1 if pose["facing"] >= 0 else -1)
             transform.rotate(pose["tilt"])
-            transform.scale(turn, 1 + (1 - abs(turn)) * .035)
+            transform.scale(-1. if pose["facing"] < 0 else 1., 1.)
         transform.translate(-pivot.x(), -pivot.y())
         return transform
 
@@ -1204,8 +1203,9 @@ class Overlay(QtWidgets.QWidget):
         desired = self.facing_target
         if self.facing_mode in {"left", "right"}:
             desired = -1. if self.facing_mode == "left" else 1.
-        elif abs(self.flight_velocity.x()) > 9:
-            desired = 1. if self.flight_velocity.x() > 0 else -1.
+        elif abs(self.drag_velocity.x() if dragging else self.flight_velocity.x()) > 9:
+            direction = self.drag_velocity.x() if dragging else self.flight_velocity.x()
+            desired = 1. if direction > 0 else -1.
         elif not dragging and now - self.last_facing_change > 1.2:
             inspection = self.inspection_target(now)
             if inspection is not None and (self.state or {}).get("behavior") not in {"sleep", "dream"}:
@@ -1218,12 +1218,10 @@ class Overlay(QtWidgets.QWidget):
                     target = self.graph_points.get(gesture.get("target_id"))
                     if target is not None and abs(target.x() - self.creature_rect.center().x()) > 70:
                         desired = 1. if target.x() > self.creature_rect.center().x() else -1.
-        if desired != self.facing_target and now - self.last_facing_change > (.15 if dragging else .7):
+        if desired != self.facing_target and (dragging or now - self.last_facing_change > .7):
             self.facing_target = desired
             self.last_facing_change = now
-        self.facing += (self.facing_target - self.facing) * (1 - math.exp(-dt / .14))
-        if abs(self.facing - self.facing_target) < .002:
-            self.facing = self.facing_target
+        self.facing = self.facing_target
 
         gesture = self.gesture(now)
         imitate = (gesture and gesture.get("kind") == "imitate" and self.typing_recent(now)
@@ -1407,17 +1405,26 @@ class Overlay(QtWidgets.QWidget):
         if self.dragged:
             if self.drag_mode == "window":
                 self.move(self.press_window + delta)
-                if self.last_drag_position is not None and not self.reduced_motion:
+                if self.last_drag_position is not None:
                     movement = event.globalPos() - self.last_drag_position
-                    self.body_velocity += QtCore.QPointF(-movement.x() * .8, -movement.y() * .8)
                     now = time.monotonic()
-                    elapsed = max(.008, min(.2, now - self.last_drag_at))
-                    velocity = QtCore.QPointF(movement.x() / elapsed / self.scale, movement.y() / elapsed / self.scale)
-                    speed = math.hypot(velocity.x(), velocity.y())
-                    if speed > 1800:
-                        velocity *= 1800 / speed
-                    self.drag_velocity += (velocity - self.drag_velocity) * .6
+                    if not self.reduced_motion:
+                        self.body_velocity += QtCore.QPointF(-movement.x() * .8, -movement.y() * .8)
+                        elapsed = max(.008, min(.2, now - self.last_drag_at))
+                        velocity = QtCore.QPointF(movement.x() / elapsed / self.scale, movement.y() / elapsed / self.scale)
+                        speed = math.hypot(velocity.x(), velocity.y())
+                        if speed > 1800:
+                            velocity *= 1800 / speed
+                        self.drag_velocity = velocity
                     self.last_drag_at = now
+                    if movement.x() and self.facing_mode == "automatic":
+                        direction = 1. if movement.x() > 0 else -1.
+                        changed = direction != self.facing_target
+                        self.facing = self.facing_target = direction
+                        self.last_facing_change = now
+                        if changed:
+                            self.render_frame(now)
+                            self.update()
                     self.animation.setInterval(33)
                 self.last_drag_position = event.globalPos()
             elif self.connected:
@@ -1522,10 +1529,9 @@ class Overlay(QtWidgets.QWidget):
         if mode != "automatic":
             self.facing_target = -1. if mode == "left" else 1.
         self.last_facing_change = -math.inf
-        if self.reduced_motion:
-            self.facing = self.facing_target
-        else:
-            self.animation.setInterval(33)
+        self.facing = self.facing_target
+        self.render_frame(time.monotonic())
+        self.update()
         self.save_view_preferences()
 
     def set_graph_visibility(self, mode):

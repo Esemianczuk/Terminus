@@ -313,15 +313,12 @@ class OverlayTests(unittest.TestCase):
         self.assertGreater(widget.flight_strength, .8)
         self.assertGreater(widget.flight_bank, 4)
         self.assertEqual(widget.facing_target, 1.)
-        previous = widget.facing
         for index in range(18, 48):
             clock = now + index / 30
             widget.last_drag_at = clock
             widget.drag_velocity = OVERLAY.QtCore.QPointF(-600, 60)
             widget.advance_presentation(clock, 1 / 30)
-            self.assertLess(abs(widget.facing - previous), .5)
-            previous = widget.facing
-        self.assertLess(widget.facing, -.9)
+            self.assertEqual(widget.facing, -1.)
         self.assertLess(widget.flight_bank, -4)
         widget.press_global = None
         for index in range(48, 160):
@@ -334,8 +331,8 @@ class OverlayTests(unittest.TestCase):
         widget = self.widget()
         widget.receive_state(self.snapshot())
         widget.status_until = 0
-        # Explicit reduced-motion facing changes immediately; normal turns are
-        # finite GIF footage, tested independently below.
+        # Both motion preferences use immediate mirroring, leaving graph
+        # contacts and inscriptions in their existing world orientation.
         widget.reduced_motion = True
         now = widget.last_seen
         widget.glyph_sequence, widget.glyph_started = [4, 11, 19], now - 1
@@ -352,6 +349,37 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(widget.frame.copy(glyph), original.copy(glyph))
         for key, path, _ in widget.tendril_geometry(widget.graph_points, now):
             self.assertEqual(path.pointAtPercent(1), original_points[key])
+
+    def test_drag_reversal_mirrors_on_the_mouse_event_even_with_reduced_motion(self):
+        for reduced in (False, True):
+            with self.subTest(reduced_motion=reduced):
+                widget = self.widget()
+                widget.receive_state(self.snapshot())
+                widget.animation.stop()
+                widget.reduced_motion = reduced
+                widget.press_global = OVERLAY.QtCore.QPoint(1000, 500)
+                widget.press_window = widget.pos()
+                widget.last_drag_position = widget.press_global
+                widget.last_drag_at = time.monotonic()
+                widget.dragged, widget.drag_mode = True, "window"
+
+                def move(x):
+                    event = OVERLAY.QtGui.QMouseEvent(
+                        OVERLAY.QtCore.QEvent.MouseMove, widget.creature_rect.center(),
+                        OVERLAY.QtCore.QPointF(x, 500), OVERLAY.QtCore.Qt.NoButton,
+                        OVERLAY.QtCore.Qt.LeftButton, OVERLAY.QtCore.Qt.NoModifier)
+                    widget.mouseMoveEvent(event)
+
+                move(1100)
+                move(1099)  # One-pixel reversal while previous flight is rightward.
+                self.assertEqual(widget.facing_target, -1.)
+                self.assertTrue(widget.clip_sample.mirror)
+                self.assertNotEqual(widget.clip_sample.clip, "turn")
+                move(1100)
+                self.assertFalse(widget.clip_sample.mirror)
+                widget.set_facing_mode("left")
+                move(1200)
+                self.assertTrue(widget.clip_sample.mirror)
 
     def test_actual_gif_loops_persist_through_takeoff_movement_and_landing(self):
         widget = self.widget()

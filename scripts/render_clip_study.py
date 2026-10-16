@@ -25,7 +25,7 @@ SPEC = importlib.util.spec_from_file_location("terminus_gif_study", ROOT / "desk
 NATIVE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(NATIVE)
 SCENES = (("Idle loop", 3.2, "idle", 1), ("Takeoff and moving loop", 3.2, "moving", 1),
-          ("Turn and moving loop", 3.0, "moving", -1), ("Landing into idle", 2.0, "idle", -1),
+          ("Instant flip and moving loop", 3.0, "moving", -1), ("Landing into idle", 2.0, "idle", -1),
           ("Poke transition", 1.2, "idle", -1), ("Settle into sleep loop", 4., "sleep", -1),
           ("Wake transition", 1.3, "idle", -1), ("Typing loop", 2.4, "typing", -1),
           ("Stretch clip", 1.2, "idle", -1), ("Yawn clip", 1.2, "idle", -1))

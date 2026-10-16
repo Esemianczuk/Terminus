@@ -193,7 +193,7 @@ class ClipPlayer:
         self._state = "idle"
         self._target = "idle"
         self._started_at = self._last_now = 0.
-        self._facing = self._turn_from = self._turn_to = 1
+        self._facing = 1
         self._last_dragging = False
         self._last_poke = None
         self._seen_gestures = []
@@ -207,30 +207,19 @@ class ClipPlayer:
         self._state = self._target = state
         self._started_at = now
 
-    def _begin(self, name, target, now, facing=None):
+    def _begin(self, name, target, now):
         clip = self.library.clips.get(name)
         if clip is None:
             self._enter_loop(target, now)
-            if facing is not None:
-                self._facing = facing
             return
         self._clip, self._target, self._started_at = clip, target, now
-        if name == "turn":
-            self._turn_from, self._turn_to = self._facing, facing
-
-    def _visual_facing(self, now):
-        if self._clip.name == "turn":
-            return self._turn_to if (now - self._started_at) * 1000 >= self._clip.duration_ms / 2 else self._turn_from
-        return self._facing
 
     def _complete(self, now):
         if not self._clip.loop and (now - self._started_at) * 1000 >= self._clip.duration_ms:
             end = self._started_at + self._clip.duration_ms / 1000
-            if self._clip.name == "turn":
-                self._facing = self._turn_to
             self._enter_loop(self._target, end)
 
-    def _reconcile(self, desired, facing, now):
+    def _reconcile(self, desired, now):
         if not self._clip.loop:
             return
         if self._state != desired:
@@ -244,8 +233,6 @@ class ClipPlayer:
                 self._begin("sleep-in", "sleep", now)
             else:
                 self._enter_loop(desired, now)
-        elif facing != self._facing:
-            self._begin("turn", desired, now, facing=facing)
 
     @staticmethod
     def _gesture_key(gesture, gesture_id):
@@ -292,6 +279,9 @@ class ClipPlayer:
             self._enter_loop(desired, now)
             self._suspended_at = None
             self._frozen_frame = None
+        # Facing is an immediate mirror of the currently playing frame. It
+        # never starts a turn clip, squeezes the body, or resets GIF playback.
+        self._facing = facing
         if reduced_motion:
             if not self._reduced or self._state != desired or not self._clip.loop:
                 self._enter_loop(desired, now)
@@ -306,25 +296,22 @@ class ClipPlayer:
         drag_started = bool(dragging) and not self._last_dragging
         self._last_dragging = bool(dragging)
         if drag_started and self._clip.name not in {"moving", "takeoff"}:
-            self._facing = self._visual_facing(now)
             self._begin("takeoff", "moving", now)
         elif desired == "moving" and not self._clip.loop and self._clip.name in {"poke", "stretch", "yawn", "blink", "peer", "signal"}:
-            self._facing = self._visual_facing(now)
             self._begin("takeoff", "moving", now)
         elif new_poke and not dragging:
-            self._facing = self._visual_facing(now)
             self._begin("poke", desired, now)
         elif (new_gesture and desired not in {"moving", "sleep"} and self._clip.loop
               and key[0] in {"stretch", "yawn", "blink", "peer", "signal"} and key[0] in self.library.clips):
             self._begin(key[0], desired, now)
         else:
-            self._reconcile(desired, facing, now)
+            self._reconcile(desired, now)
         self._last_sample = self._sample(now)
         return self._last_sample
 
     def _sample(self, now, *, first=False, quiet=False):
         index, delay = self._clip.frame_at(now - self._started_at, first=first)
         return AnimationFrame(self._clip.frames[index], self._clip.name, index, self._target,
-                              not self._clip.loop, self._visual_facing(now) < 0,
+                              not self._clip.loop, self._facing < 0,
                               1000 if quiet else delay, self._clip.anchors,
                               self._clip.loop and self._clip.name != self._target)

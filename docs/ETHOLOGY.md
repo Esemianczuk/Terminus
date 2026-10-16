@@ -16,7 +16,7 @@ The native body plays actual transparent GIFs: persistent idle, moving, sleep an
 
 The graph remains ephemeral. Soft branches and pulses are driven by actual node/edge state; contact pearls support the body; glyphs arrive from core utterances. There is no permanent status panel. Empty transparent space passes clicks through.
 
-Desktop paths make deliberate excursions around the available monitor. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. When desktop awareness is enabled, some exploration paths can inspect a focused window's edge using its rectangle. Window content and screen images are not sampled. Actual movement drives directional swimming and smooth facing transitions.
+Desktop paths make deliberate excursions around the available monitor. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. When desktop awareness is enabled, some exploration paths can inspect a focused window's edge using its rectangle. Window content and screen images are not sampled. Actual movement drives directional swimming and instant facing changes.
 
 ## Real observations and history
 

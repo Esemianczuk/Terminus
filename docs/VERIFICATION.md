@@ -5,7 +5,7 @@
 ## Automated checks
 
 - `uv sync --extra test --extra desktop` completed in an isolated `.venv`; `uv.lock` records exact dependencies. Runtime used CPython 3.13.14. The project supports Python 3.10+.
-- `uv run python -m pytest -q`: 133 passed, plus 32 native/animation subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
+- `uv run python -m pytest -q`: 134 passed, plus 36 native/animation subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
 - `node --test tests/*.test.mjs`: 6 passed. Actual client code runs in an inert DOM harness; covers cached offline/auth-unknown queuing, confirmed 401 blocking, same-ID replay without internal metadata, isolation from stale client outboxes, bounds/expiry and service-worker access boundaries, plus graceful loading of aligned sleep artwork.
 - `node --check web/app.js` and `node --check web/service-worker.js` passed with bundled modern Node.
 - `uv run python scripts/evaluate.py --output docs/evaluation-v3.json` records the current isolated synthetic experiment; `docs/evaluation.json` retains the earlier result. After 600 balanced work/break events (599 gradient updates), frozen next-event inference is 100% accurate on 120 additional alternating events; cold model accuracy is 0.83%. This is temporal continuation of the same simple pattern, not held-out worlds, general understanding or proof of long-term intrigue. Evaluation never accesses the live organism.
@@ -105,3 +105,10 @@ Frames were authored locally on the CPU from approved clean PNG poses using the 
 Only the owned desktop body was restarted; its original core and learned history kept running. On the actual X11 session the resident reported backend=gif, sleep/idle/moving clips, changing frame indices, fallback=false and clip_errors=0. Bright visibility reports gain 2.8. It remains exposed, connected, translucent, topmost, frameless and no-focus, with the same organism ID. An offscreen network/render smoke also passed.
 
 A 22-second live sample observed idle and inspect behavior with actual idle/moving GIFs. The process used 11.82% of one CPU core during that active interval and rendered the sampled frame in 3.02 ms. This is a short workload-specific observation, not a controlled speedup claim. Core state and observation collection were unchanged. The graph's higher default brightness preserves the unboosted input layer; Subtle/Clear/Bright preferences persist privately.
+
+
+## Immediate facing change — 2026-10-16
+
+Facing now mirrors the current full-width GIF frame immediately, without selecting the turn GIF, interpolating body width or restarting playback. The mouse handler applies the new direction on the reversal event rather than waiting for smoothed flight velocity or a direction cooldown. Forced Left/Right controls still take precedence; reduced motion also flips immediately.
+
+The regression gate passes 134 Python tests and 36 subtests. New checks reverse an actual isolated native mouse-move event by one pixel while the prior flight velocity is still rightward, verify immediate mirroring with normal/reduced motion and forced facing, and preserve GIF frame/index/loop phase when flipping idle, moving and takeoff clips. Stale-state freezing and graph/inscription orientation checks still pass. Only the owned desktop body was restarted; live native presence, GIF backend, memory identity and Bright graph preferences remain intact. The old turn asset stays preserved as an unused reference.
