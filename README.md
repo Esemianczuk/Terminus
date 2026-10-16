@@ -87,7 +87,8 @@ Tests cover controlled online prediction learning, habituation, graph updates, e
 - [Architecture, current boundaries and next extensions](docs/ARCHITECTURE.md)
 - [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
 - [Directional flight, window awareness and typing](docs/DESKTOP_AWARENESS.md)
+- [GIF loops, transitions and local frame authoring](docs/GIF_ANIMATION.md)
 - [Art sources, exact prompts and local diffusion workflow](docs/ART.md)
 - [Verification record](docs/VERIFICATION.md)
 
-The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion uses a continuous 2D texture mesh, code-drawn tendrils and registered awake, sleep, stretch, yawn, flight and typing art. A full independent skeletal rig remains future work. [Additional art and exact prompts](docs/ART_DIRECTIONAL.md).
+The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion plays actual transparent GIF loops with short GIF transitions, while code-drawn tendrils connect the body to the live graph. Approved PNG poses remain the authoring sources and fallback art. [GIF authoring](docs/GIF_ANIMATION.md); [art and exact prompts](docs/ART_DIRECTIONAL.md).

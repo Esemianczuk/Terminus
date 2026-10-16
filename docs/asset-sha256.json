@@ -9,5 +9,19 @@
   "web/assets/terminus-stretch.png": "5288e5625eab4ed8306e2f14e8acb6337d69fe55374557504e735c89b5cf889f",
   "web/assets/terminus-yawn.png": "58907c8178790e45519d3064546f8be3fc677b70a2d30db709617cbd5a25430b",
   "web/assets/terminus-flight.png": "c335e830fa4c9e184628d4a74c7f9f92aeb60e5d2a77b9646c5ac4551ac482d8",
-  "web/assets/terminus-typing.png": "53dff0286ae3871dba97b006c3d04da4a100d4112a4e8f9675c8a4f9c4c6e71b"
+  "web/assets/terminus-typing.png": "53dff0286ae3871dba97b006c3d04da4a100d4112a4e8f9675c8a4f9c4c6e71b",
+  "web/assets/clips/idle.gif": "f071bdfeaa4c67c302a0d08b9883381bb65be4b2de576b49219caa3b5904d151",
+  "web/assets/clips/landing.gif": "d75a151df7071a657b4a4c6cdc20c1f23288aecc0f2bc787b6d8ac5628477b0f",
+  "web/assets/clips/manifest.json": "65ba6ea5073c5b9139408ca9a29411ab17daf39bda17bcd988381abadd07126c",
+  "web/assets/clips/moving.gif": "ec0d115abc0040febb32b7614c2b2da0b94203e8a32b378e9312a989546c2372",
+  "web/assets/clips/poke.gif": "2778e75aba2b2a9990abc36dcce5e5c3783e7dc585bdf571e4d0165771d6777c",
+  "web/assets/clips/provenance.json": "f53335d254ad36334e559237c541d71d974e6e89e2439f4a83ff653a84d6f610",
+  "web/assets/clips/sleep-in.gif": "2a9d7fb478ab9367b34525145ec1526c170cd30862a279f630f49ea5fbfa0f1c",
+  "web/assets/clips/sleep.gif": "6c6a29130a325e8a7f729b52822f7895cdf04d03a159fe1423b4dd73f1037a23",
+  "web/assets/clips/stretch.gif": "124e3693d934d69c75e9616e3015a539f40076ad287b414b1e2c9516d85ddeb1",
+  "web/assets/clips/takeoff.gif": "8bf9bfcc45764244689d19497c498cfd1f0b996a729e66d9d07d885ae29e4b6e",
+  "web/assets/clips/turn.gif": "ce7ab71abbeabe4de347e5faaf5f8da035e54df3756c32c2282e949e85a8319e",
+  "web/assets/clips/typing.gif": "2d71dec0160084743c4a0060ac1c545798e5662798ed1a76b94a752063aebf2f",
+  "web/assets/clips/wake.gif": "352d504aadbde3c1463ef2a4b26f434d60e59b04c999f02b007a8bcf7879c2b2",
+  "web/assets/clips/yawn.gif": "f6665ad1c8c9af812321c2eba9b78fc4fb2e0d67a30947652d9ff7e3a5674171"
 }

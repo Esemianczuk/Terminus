@@ -1,6 +1,6 @@
 # Flight, looking and quiet imitation
 
-The native body now uses actual drag/roaming velocity to bank, float and trail its arms. Facing moves continuously through a small squash before mirroring, while the graph and inscriptions retain their world orientation. Release eases back into a settled pose. Right-click **Look** for Automatic, Left or Right; that choice persists with other private view preferences. Reduced motion removes continuous flight, tapping and turning interpolation.
+The native body uses actual drag/roaming to select takeoff and moving GIFs, with a small directional bank. A finite turn GIF narrows before its midpoint mirror, while the graph and inscriptions retain their world orientation. Release plays a landing clip into the appropriate resting loop. Right-click **Look** for Automatic, Left or Right; that choice persists with other private view preferences. Reduced motion holds the loop's first frame. [GIF playback details](GIF_ANIMATION.md).
 
 Autonomous excursions still require a fresh core motion intent. Some exploration paths can pause beside the focused window's edge, with monitor bounds and a cooldown. The body looks toward a fresh accessible text anchor when available, otherwise toward the focused window. It does not understand or inspect the window's contents.
 

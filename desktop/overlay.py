@@ -286,6 +286,10 @@ class Overlay(QtWidgets.QWidget):
         self.sleep_art = QtGui.QPixmap()
         self.pose_art = {}
         self.art_cache = {}
+        self.clip_library = self.clip_player = self.clip_sample = None
+        self.clip_error = None
+        self.clip_pixmap = QtGui.QPixmap()
+        self.clip_pixmap_key = None
         self.glow_cache = {}
         self.graph_cache_key = None
         self.graph_points = {}
@@ -308,7 +312,10 @@ class Overlay(QtWidgets.QWidget):
         self.last_facing_change = -math.inf
         self.typing_blend = 0.
         self.typing_phase = 0.
-        self.graph_gain = 1.8
+        self.graph_visibility = self.preferences.value("graph_visibility", "bright")
+        if self.graph_visibility not in {"subtle", "clear", "bright"}:
+            self.graph_visibility = "bright"
+        self.graph_gain = {"subtle": 1., "clear": 1.8, "bright": 2.8}[self.graph_visibility]
         self.awareness = {"available": False, "enabled": False, "observed_at": 0.}
         self.awareness_provider = None
         self.caret_provider = None
@@ -384,10 +391,18 @@ class Overlay(QtWidgets.QWidget):
         art = next((path for path in candidates if path.is_file()), None)
         sleep_path = self.assets / "terminus-sleep.png"
         optional = {kind: self.assets / ("terminus-" + kind + ".png") for kind in ("stretch", "yawn", "flight", "typing")}
+        manifest = self.assets / "clips" / "manifest.json"
+        def fingerprint(path):
+            try:
+                information = path.stat()
+                return (str(path), information.st_mtime_ns, information.st_size)
+            except OSError:
+                return None
         signature = ((str(art), art.stat().st_mtime_ns) if art else None,
                      sleep_path.stat().st_mtime_ns if sleep_path.is_file() else None,
                      tuple((kind, path.stat().st_mtime_ns if path.is_file() else None)
-                           for kind, path in optional.items()))
+                           for kind, path in optional.items()), fingerprint(manifest),
+                     tuple(fingerprint(path) for path in sorted(manifest.parent.glob("*.gif"))[:32]))
         if signature == self.art_signature:
             return
         self.art_signature = signature
@@ -408,10 +423,54 @@ class Overlay(QtWidgets.QWidget):
             self.movie.start()
         elif art:
             self.static_art.load(str(art))
+        self.clip_library = self.clip_player = self.clip_sample = None
+        self.clip_error = None
+        self.clip_pixmap = QtGui.QPixmap()
+        self.clip_pixmap_key = None
+        if manifest.is_file():
+            try:
+                try:
+                    from desktop.animation import ClipLibrary, ClipPlayer
+                except ModuleNotFoundError:
+                    from animation import ClipLibrary, ClipPlayer
+                self.clip_library = ClipLibrary.from_manifest(manifest)
+                self.clip_player = ClipPlayer(self.clip_library)
+                self.prepare_clip(time.monotonic())
+            except (ImportError, OSError, ValueError, RuntimeError) as error:
+                self.clip_error = type(error).__name__
+                self.clip_library = self.clip_player = self.clip_sample = None
         self.update()
 
     def artwork(self):
+        if self.clip_sample is not None and not self.clip_sample.image.isNull():
+            key = self.clip_sample.image.cacheKey()
+            if key != self.clip_pixmap_key:
+                self.clip_pixmap = QtGui.QPixmap.fromImage(self.clip_sample.image)
+                self.clip_pixmap_key = key
+            return self.clip_pixmap
         return self.movie.currentPixmap() if self.movie else self.static_art
+
+    def prepare_clip(self, now):
+        """Choose real animation frames; core/local observations own the inputs."""
+        if self.clip_player is None:
+            return
+        state = self.state or {}
+        gesture = self.gesture(now)
+        dragging = self.press_global is not None and self.dragged and self.drag_mode == "window"
+        if state.get("behavior") in {"sleep", "dream"}:
+            desired = "sleep"
+        elif gesture and gesture.get("kind") == "imitate" and self.typing_recent(now) and not dragging:
+            desired = "typing"
+        elif dragging or self.flight_strength > .08 or (self.roam_goal is not None and self.can_roam(now)
+                                                       and math.hypot(self.roam_velocity.x(), self.roam_velocity.y()) > 6):
+            desired = "moving"
+        else:
+            desired = "idle"
+        self.clip_sample = self.clip_player.advance(
+            now, desired=desired, facing=-1 if self.facing_target < 0 else 1, dragging=dragging,
+            poke_id=f"touch-{self.touch_started}" if math.isfinite(self.touch_started) else None,
+            reduced_motion=self.reduced_motion, fresh=self.fresh(now),
+            gesture=gesture.get("kind") if gesture else None, gesture_id=gesture.get("id") if gesture else None)
 
     def fresh(self, now=None):
         now = time.monotonic() if now is None else now
@@ -503,7 +562,8 @@ class Overlay(QtWidgets.QWidget):
                 "flight": reduced * self.flight_strength, "flight_x": reduced * self.flight_velocity.x(),
                 "flight_y": reduced * self.flight_velocity.y(), "typing": reduced * self.typing_blend,
                 "typing_phase": self.typing_phase, "gaze_y": gaze_y * reduced,
-                "facing": self.facing if not self.reduced_motion else (1 if self.facing_target >= 0 else -1)}
+                "facing": (-1. if self.clip_sample.mirror else 1.) if self.clip_sample is not None
+                          else self.facing if not self.reduced_motion else (1 if self.facing_target >= 0 else -1)}
 
     def receive_state(self, state):
         self.state = state
@@ -689,13 +749,14 @@ class Overlay(QtWidgets.QWidget):
         anchor = self.graph_point(position["x"], position["y"])
         anchor.setX(max(120, min(320, anchor.x())))
         anchor.setY(max(236, min(278, anchor.y())))
-        breath = 0 if self.reduced_motion else math.sin((now - self.started) * (1.0 if self.sleep_blend > .5 else 1.6))
-        # Mantle inflation is handled independently by the image mesh. The root
-        # of the body stays attached to its hammock instead of bobbing as a card.
-        height = 206 * (1 - self.sleep_blend * .07) * (1 + .002 * breath)
+        breath = 0 if self.reduced_motion or self.clip_sample is not None else math.sin((now - self.started) * (1.0 if self.sleep_blend > .5 else 1.6))
+        # GIFs own the whole silhouette, including breathing and rest poses.
+        # Their fixed canvas stays attached to the graph without a texture rig.
+        resting = self.sleep_blend if self.clip_sample is None else 0.
+        height = 206 * (1 - resting * .07) * (1 + .002 * breath)
         art = self.artwork()
         width = height * (art.width() / art.height() if not art.isNull() else .92)
-        width *= 1 + self.sleep_blend * .07
+        width *= 1 + resting * .07
         self.creature_rect = QtCore.QRectF(anchor.x() - width / 2 + self.body_offset.x(),
                                          anchor.y() - height + 10 + self.body_offset.y() - self.flight_strength * 9, width, height)
         self.cache_graph(state)
@@ -753,7 +814,12 @@ class Overlay(QtWidgets.QWidget):
             reach_side = side * (1 if pose["facing"] >= 0 else -1)
             u = .5 + reach_side * (.32 * (1 - flying) + .16 * flying)
             v = (.75 + .045 * index) * (1 - flying) + (.57 + .025 * index) * flying
-            start = self.body_transform(pose).map(self.mesh_point(u, v, pose))
+            anchors = getattr(self.clip_sample, "anchors", {}) if self.clip_sample is not None else {}
+            contact = anchors.get("center" if index == 0 else "left" if reach_side < 0 else "right")
+            if (isinstance(contact, (list, tuple)) and len(contact) == 2
+                    and all(isinstance(value, (int, float)) and math.isfinite(value) and 0 <= value <= 1 for value in contact)):
+                u, v = contact
+            start = self.body_transform(pose).map(QtCore.QPointF(rect.left() + u * rect.width(), rect.top() + v * rect.height()))
             active = amount(nodes[key].get("activation"))
             gesture = 5 * math.sin(elapsed * .75 + index * 2.2) * pose["amplitude"]
             reaching = pose["gesture"] if key == attention else pose["stretch"] * .7
@@ -813,7 +879,7 @@ class Overlay(QtWidgets.QWidget):
             activity = max(amount(nodes[a].get("activation")), amount(nodes[b].get("activation")))
             weight = amount(edge.get("weight"), .3)
             focus = a == attention or b == attention
-            visibility = .30 + .70 * (.5 + .5 * math.sin(elapsed * .31 + index * 1.618))
+            visibility = .55 + .45 * (.5 + .5 * math.sin(elapsed * .31 + index * 1.618))
             alpha = (13 + weight * 24 + activity * 72 + (16 if focus else 0)) * visibility
             path = self.graph_paths[index]
             painter.setBrush(QtCore.Qt.NoBrush)
@@ -829,7 +895,7 @@ class Overlay(QtWidgets.QWidget):
             active = amount(nodes[key].get("activation"))
             focus = key == attention
             contacted = key in contacts
-            breath = .65 + .35 * math.sin(elapsed * (.65 + active) + index * 1.7)
+            breath = .75 + .25 * math.sin(elapsed * (.65 + active) + index * 1.7)
             self.draw_glow(painter, point, 7 + active * 12 + (3 if focus else 0),
                            (113, 231, 214), (16 + active * 95 + (18 if focus else 0)) * breath)
             radius = 6 + active * 2 if contacted else 1.2 + active * 2.5 + (1 if focus else 0)
@@ -906,106 +972,42 @@ class Overlay(QtWidgets.QWidget):
             self.art_cache[key] = source.scaledToHeight(height, QtCore.Qt.SmoothTransformation)
         return self.art_cache[key]
 
-    def mesh_point(self, u, v, pose):
-        """A small continuous rig: stable face, breathing mantle, separate arms."""
-        rect = self.creature_rect
-        mantle = 1 - smoothstep(.40, .66, v)
-        arms = smoothstep(.48, .96, v)
-        amplitude = pose["amplitude"]
-        phase = pose["ripple"]
-        # Mantle inflation leaves the resting contact line nearly stationary.
-        x = u + .020 * pose["breath"] * (u - .5) * mantle * amplitude
-        y = v - .007 * pose["breath"] * (1 - v) * mantle * amplitude
-        # A travelling wave has different phases across the tentacle fan.
-        x += arms * .016 * math.sin(phase * 1.35 - v * 5.4 + u * 4.8) * amplitude
-        y += arms * .009 * math.sin(phase * 1.10 + u * 6.5 - v * 2.1) * amplitude
-        x += (u - .5) * arms * (.22 * pose["stretch"] - .16 * pose["curl"])
-        y += (v - .5) * arms * (.12 * pose["stretch"] - .11 * pose["curl"])
-        y -= pose["startle"] * .055 * (1 - arms * .35)
-        y += pose["touch"] * .022 * (1 - v)
-        facing_sign = 1 if pose["facing"] >= 0 else -1
-        # The fan trails behind actual motion. Local coordinates compensate for
-        # the body mirror so a leftward flight still trails to screen-right.
-        x -= arms * max(-.11, min(.11, pose["flight_x"] / 2300)) * facing_sign * pose["flight"]
-        y -= arms * max(-.035, min(.035, pose["flight_y"] / 3600)) * pose["flight"]
-        x += arms * (u - .5) * pose["flight"] * .08
-        tapping = math.sin(pose["typing_phase"] * 9 + u * 12) * pose["typing"]
-        y += arms * .020 * tapping
-        x += arms * .008 * math.cos(pose["typing_phase"] * 7 + u * 9) * pose["typing"]
-        y += mantle * pose["gaze_y"] * .009
-        return QtCore.QPointF(rect.left() + x * rect.width() + pose["lean"] * mantle * facing_sign,
-                              rect.top() + y * rect.height())
-
     def draw_body(self, painter, now):
-        art = self.artwork()
-        if art.isNull():
-            return
+        """Draw one actual GIF frame, with a static-image compatibility fallback."""
         pose = self.pose(now)
-        layers = []
-        close = amount(pose["blink"])
-        display_kind = "typing" if pose["typing"] > .02 else "flight" if pose["flight"] > .25 else pose["kind"]
-        optional = self.pose_art.get(display_kind)
-        if display_kind == "typing":
-            optional_blend = pose["typing"]
-        elif display_kind == "flight":
-            optional_blend = smoothstep(.25, .85, pose["flight"])
-        else:
-            optional_blend = math.sin(math.pi * pose["progress"]) ** 2
-        if optional is None or optional.isNull() or self.reduced_motion:
-            optional_blend = 0.
-        if optional_blend > .01:
-            layers = [(art, 1 - optional_blend), (optional, optional_blend)]
-        elif self.sleep_art.isNull() or close < .005:
-            layers = [(art, 1.)]
-        elif close > .995:
-            layers = [(self.sleep_art, 1.)]
-        else:
-            # Registered sleep art differs only at the eyelids. Drawing it over
-            # the awake face gives a soft blink without distorting the eyes.
-            layers = [(art, 1.), (self.sleep_art, close)]
         painter.save()
         painter.setTransform(self.body_transform(pose), True)
-        base_opacity = painter.opacity()
-        # Adjacent patches share vertices, so the photograph never separates
-        # into visible cutout pieces. The face receives only gentle mantle
-        # inflation; the lower lattice gives each side its own wave.
-        columns, rows = 4, 10
-        vertices = [[self.mesh_point(col / columns, row / rows, pose)
-                     for col in range(columns + 1)] for row in range(rows + 1)]
-        for original, opacity in layers:
-            if opacity < .005:
-                continue
-            texture = self.cached_art(original)
-            painter.setOpacity(base_opacity * opacity)
-            for row in range(rows):
-                for col in range(columns):
-                    source = QtCore.QRectF(col * texture.width() / columns, row * texture.height() / rows,
-                                           texture.width() / columns, texture.height() / rows)
-                    source_quad = QtGui.QPolygonF([source.topLeft(), source.topRight(), source.bottomRight(), source.bottomLeft()])
-                    target_quad = QtGui.QPolygonF([vertices[row][col], vertices[row][col + 1],
-                                                   vertices[row + 1][col + 1], vertices[row + 1][col]])
-                    if original is optional and pose["kind"] == "stretch":
-                        # The sprawled pose has a lower mantle and a wider fan;
-                        # align its contact baseline without editing its asset.
-                        target_quad.translate(0, self.creature_rect.height() * .051)
-                    transform = QtGui.QTransform()
-                    if QtGui.QTransform.quadToQuad(source_quad, target_quad, transform):
-                        painter.save()
-                        painter.setTransform(transform, True)
-                        # A tiny overlap hides subpixel sampling seams. Source
-                        # expansion is clipped to the texture, preserving alpha.
-                        patch = source.adjusted(-.25, -.25, .25, .25).intersected(QtCore.QRectF(texture.rect()))
-                        painter.drawPixmap(patch, texture, patch)
-                        painter.restore()
+        if self.clip_sample is not None and not self.clip_sample.image.isNull():
+            # The decoded frame owns the silhouette and expression. Never
+            # crossfade it with another pose or warp it through a texture mesh.
+            painter.drawImage(self.creature_rect, self.clip_sample.image)
+        else:
+            art = self.artwork()
+            if not self.sleep_art.isNull() and pose["blink"] >= .5:
+                art = self.sleep_art
+            elif not self.reduced_motion:
+                kind = "typing" if pose["typing"] > .5 else "flight" if pose["flight"] > .5 else pose["kind"]
+                optional = self.pose_art.get(kind)
+                if optional is not None and not optional.isNull():
+                    art = optional
+            if not art.isNull():
+                texture = self.cached_art(art)
+                painter.drawPixmap(self.creature_rect, texture, QtCore.QRectF(texture.rect()))
         painter.restore()
 
     def body_transform(self, pose):
         pivot = self.creature_rect.center() + QtCore.QPointF(0, 30)
-        turn = max(.045, abs(pose["facing"])) * (1 if pose["facing"] >= 0 else -1)
         transform = QtGui.QTransform()
         transform.translate(pivot.x(), pivot.y())
-        transform.rotate(pose["tilt"])
-        transform.scale(turn, 1 + (1 - abs(turn)) * .035)
+        if self.clip_sample is not None:
+            # Turns are authored GIF footage. Flip only when its player says
+            # so; a second x-scale would collapse the already-turning frame.
+            transform.rotate(max(-16., min(16., self.flight_bank)))
+            transform.scale(-1. if self.clip_sample.mirror else 1., 1.)
+        else:
+            turn = max(.045, abs(pose["facing"])) * (1 if pose["facing"] >= 0 else -1)
+            transform.rotate(pose["tilt"])
+            transform.scale(turn, 1 + (1 - abs(turn)) * .035)
         transform.translate(-pivot.x(), -pivot.y())
         return transform
 
@@ -1013,6 +1015,7 @@ class Overlay(QtWidgets.QWidget):
         started = time.perf_counter()
         if self.fresh(now):
             self.last_live_frame = now
+        self.prepare_clip(now)
         clock = self.last_live_frame
         elapsed = 0 if self.reduced_motion else max(0, clock - self.started)
         anchor, points = self.scene_geometry(now)
@@ -1070,8 +1073,15 @@ class Overlay(QtWidgets.QWidget):
         painter.end()
         frame = graph.copy()
         composite = QtGui.QPainter(frame)
-        composite.setOpacity(amount(self.graph_gain - 1))
-        composite.drawImage(0, 0, graph)
+        # Add premultiplied light instead of clamping a second source-over
+        # layer. Bright is a real 2.8x graph-alpha gain, with unchanged colors.
+        composite.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+        remaining = max(0., min(4., self.graph_gain) - 1)
+        while remaining > .001:
+            composite.setOpacity(min(1., remaining))
+            composite.drawImage(0, 0, graph)
+            remaining -= 1
+        composite.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
         composite.setOpacity(1)
         composite.drawImage(0, 0, foreground)
         composite.end()
@@ -1129,6 +1139,12 @@ class Overlay(QtWidgets.QWidget):
         self.update()
 
     def frame_interval(self, now):
+        interval = self.presentation_interval(now)
+        if self.clip_sample is not None and not self.reduced_motion and self.fresh(now):
+            interval = min(interval, max(20, min(250, int(self.clip_sample.next_frame_ms))))
+        return interval
+
+    def presentation_interval(self, now):
         if self.reduced_motion:
             return 250
         if self.hovering or self.press_global is not None or now - self.touch_started < 1.6:
@@ -1456,6 +1472,7 @@ class Overlay(QtWidgets.QWidget):
         self.preferences.setValue("pause_roaming", self.roaming_paused)
         self.preferences.setValue("reduced_motion", self.reduced_motion)
         self.preferences.setValue("desktop_awareness", self.awareness_enabled)
+        self.preferences.setValue("graph_visibility", self.graph_visibility)
         self.preferences.setValue("facing", self.facing_mode)
         self.preferences.setValue("x", self.x())
         self.preferences.setValue("y", self.y())
@@ -1511,6 +1528,15 @@ class Overlay(QtWidgets.QWidget):
             self.animation.setInterval(33)
         self.save_view_preferences()
 
+    def set_graph_visibility(self, mode):
+        if mode not in {"subtle", "clear", "bright"}:
+            return
+        self.graph_visibility = mode
+        self.graph_gain = {"subtle": 1., "clear": 1.8, "bright": 2.8}[mode]
+        self.save_view_preferences()
+        self.render_frame(time.monotonic())
+        self.update()
+
     def make_menu(self):
         menu = QtWidgets.QMenu(self)
         menu.addAction("&Open habitat", lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.client.url)))
@@ -1534,6 +1560,12 @@ class Overlay(QtWidgets.QWidget):
         observe.setEnabled(self.awareness_supported())
         observe.triggered.connect(self.toggle_awareness)
         menu.aboutToShow.connect(lambda: observe.setChecked(self.awareness_enabled))
+        graph = menu.addMenu("Memory &graph")
+        for label, mode in (("Subtle", "subtle"), ("Clear", "clear"), ("Bright", "bright")):
+            action = graph.addAction(label, lambda checked=False, value=mode: self.set_graph_visibility(value))
+            action.setCheckable(True)
+            action.setChecked(self.graph_visibility == mode)
+            menu.aboutToShow.connect(lambda item=action, value=mode: item.setChecked(self.graph_visibility == value))
         sizes = menu.addMenu("&Size")
         for label, scale in (("Small", .8), ("Companion", 1.), ("Large", 1.3), ("Extra large", 1.6)):
             action = sizes.addAction(label, lambda checked=False, value=scale: self.change_scale(value))
@@ -1606,6 +1638,9 @@ class Overlay(QtWidgets.QWidget):
             self.caret_provider = None
         if self.tray:
             self.tray.hide()
+        if self.movie:
+            self.movie.stop()
+        self.clip_player = self.clip_library = self.clip_sample = None
         super().closeEvent(event)
 
     def diagnostics(self):
@@ -1629,6 +1664,14 @@ class Overlay(QtWidgets.QWidget):
                 "reduced_motion": self.reduced_motion, "snapshot_fresh": self.fresh(),
                 "facing": "left" if self.facing < 0 else "right", "facing_mode": self.facing_mode,
                 "flight_strength": round(self.flight_strength, 3), "typing_pose": self.typing_blend > .05,
+                "body_animation": {"backend": "gif" if self.clip_sample is not None else "image-fallback",
+                                   "clip": self.clip_sample.clip if self.clip_sample is not None else None,
+                                   "frame": self.clip_sample.index if self.clip_sample is not None else None,
+                                   "transition": bool(self.clip_sample is not None and self.clip_sample.transition),
+                                   "fallback": bool(getattr(self.clip_sample, "fallback", False)),
+                                   "load_error": self.clip_error,
+                                   "clip_errors": len(getattr(self.clip_library, "errors", ()))},
+                "graph_visibility": self.graph_visibility, "graph_gain": self.graph_gain,
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
                                       "source": self.awareness.get("source", "unavailable"), "caret_source": self.awareness.get("caret_source", "window-fallback")},
                 "frame_interval_ms": self.animation.interval(), "render_ms": round(self.render_ms, 2),

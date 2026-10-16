@@ -12,7 +12,7 @@ The compact recurrent model still starts from random weights. Its prediction sig
 
 ## Physical vocabulary
 
-The native body has an articulated texture mesh: the mantle breathes and shifts separately from flowing tentacles; head tilt and peering respond to a target. Registered awake/sleep art expresses blink envelopes. Additional identity-preserving stretch and yawn poses blend into the same body. Curled appendages grip actual graph nodes; gestures change their reaching and curling shapes. A direct touch produces a damped physical response, while dragging gives the body a short springy settle.
+The native body plays actual transparent GIFs: persistent idle, moving, sleep and typing loops, plus short transition and gesture clips. Registered awake/sleep/flight/typing/stretch/yawn art supplies the offline-authored frames. Runtime body mesh deformation and pose crossfades have been removed. Curled appendages still grip actual graph nodes using registered clip anchors; gestures change their reaching and curling shapes. A direct touch plays a poke clip, and dragging/release use takeoff, moving and landing GIFs.
 
 The graph remains ephemeral. Soft branches and pulses are driven by actual node/edge state; contact pearls support the body; glyphs arrive from core utterances. There is no permanent status panel. Empty transparent space passes clicks through.
 

@@ -5,6 +5,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -272,13 +273,29 @@ class OverlayTests(unittest.TestCase):
         widget.last_mask = -float("inf")
         widget.render_frame(now)
         original, region = widget.frame.copy(), widget.input_region
-        widget.graph_gain = 1.8
+        widget.graph_gain = 2.8
         widget.last_mask = -float("inf")
         widget.render_frame(now)
         self.assertEqual(widget.input_region, region)
         point = widget.graph_point(.12, .22).toPoint() + OVERLAY.QtCore.QPoint(5, 0)
-        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(point)), OVERLAY.QtGui.qAlpha(original.pixel(point)))
+        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(point)), OVERLAY.QtGui.qAlpha(original.pixel(point)) * 2)
         self.assertEqual(OVERLAY.QtGui.qAlpha(widget.frame.pixel(0, 0)), 0)
+
+    def test_graph_visibility_defaults_bright_and_restores_explicit_choice(self):
+        with tempfile.TemporaryDirectory(prefix="terminus-graph-settings-") as directory:
+            path = Path(directory)
+            widget = self.widget(path)
+            self.assertEqual(widget.graph_visibility, "bright")
+            self.assertEqual(widget.graph_gain, 2.8)
+            widget.set_graph_visibility("subtle")
+            self.assertEqual(widget.graph_gain, 1.)
+            widget.close()
+            restored = self.widget(path)
+            self.assertEqual(restored.graph_visibility, "subtle")
+            restored.set_graph_visibility("clear")
+            self.assertEqual(restored.graph_gain, 1.8)
+            restored.set_graph_visibility("invalid")
+            self.assertEqual(restored.graph_visibility, "clear")
 
     def test_drag_velocity_banks_turns_and_settles_without_creating_core_events(self):
         widget = self.widget()
@@ -317,6 +334,9 @@ class OverlayTests(unittest.TestCase):
         widget = self.widget()
         widget.receive_state(self.snapshot())
         widget.status_until = 0
+        # Explicit reduced-motion facing changes immediately; normal turns are
+        # finite GIF footage, tested independently below.
+        widget.reduced_motion = True
         now = widget.last_seen
         widget.glyph_sequence, widget.glyph_started = [4, 11, 19], now - 1
         widget.facing = widget.facing_target = 1.
@@ -332,6 +352,79 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(widget.frame.copy(glyph), original.copy(glyph))
         for key, path, _ in widget.tendril_geometry(widget.graph_points, now):
             self.assertEqual(path.pointAtPercent(1), original_points[key])
+
+    def test_actual_gif_loops_persist_through_takeoff_movement_and_landing(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        widget.status_until = 0
+        self.assertIsNotNone(widget.clip_player)
+        self.assertEqual(dict(widget.clip_library.errors), {})
+        self.assertLessEqual(widget.clip_library.decoded_bytes, 96 * 1024 * 1024)
+        now = widget.last_seen
+        widget.render_frame(now)
+        self.assertEqual(widget.clip_sample.clip, "idle")
+        first = widget.clip_sample.image
+        widget.render_frame(now + .25)
+        self.assertGreater(widget.clip_sample.index, 0)
+        self.assertNotEqual(widget.clip_sample.image, first)
+        widget.flight_strength = 1.
+        widget.render_frame(now + .3)
+        self.assertEqual(widget.clip_sample.clip, "takeoff")
+        moving_at = now + .3 + widget.clip_library.clips["takeoff"].duration_ms / 1000 + .01
+        widget.render_frame(moving_at)
+        self.assertEqual(widget.clip_sample.clip, "moving")
+        widget.render_frame(moving_at + .2)
+        self.assertEqual(widget.clip_sample.clip, "moving")
+        self.assertGreater(widget.clip_sample.index, 0)
+        widget.flight_strength = 0.
+        widget.render_frame(moving_at + .3)
+        self.assertEqual(widget.clip_sample.clip, "landing")
+        landed_at = moving_at + .3 + widget.clip_library.clips["landing"].duration_ms / 1000 + .01
+        widget.render_frame(landed_at)
+        self.assertEqual(widget.clip_sample.clip, "idle")
+        self.assertFalse(widget.clip_sample.transition)
+
+        class SingleFramePainter:
+            def __init__(self):
+                self.images = []
+                self.transform = None
+            def save(self):
+                pass
+            def restore(self):
+                pass
+            def setTransform(self, transform, combine):
+                self.transform = transform
+            def drawImage(self, rectangle, image):
+                self.images.append(image)
+            def drawPixmap(self, *args):
+                raise AssertionError("A GIF body must not blend with a PNG pose")
+
+        painter = SingleFramePainter()
+        widget.draw_body(painter, landed_at)
+        self.assertEqual(painter.images, [widget.clip_sample.image])
+        self.assertAlmostEqual(abs(painter.transform.m11()), 1., places=6)
+
+    def test_missing_or_unreadable_gif_bank_falls_back_to_an_intact_png(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        with tempfile.TemporaryDirectory(prefix="terminus-gif-fallback-") as directory:
+            assets = Path(directory)
+            shutil.copyfile(ROOT / "web/assets/terminus-refined.png", assets / "terminus-refined.png")
+            widget.assets = assets
+            widget.load_art()
+            self.assertIsNone(widget.clip_player)
+            self.assertFalse(widget.artwork().isNull())
+            clips = assets / "clips"
+            clips.mkdir()
+            (clips / "broken.gif").write_bytes(b"not a gif")
+            (clips / "manifest.json").write_text(json.dumps({"version": 1, "canvas": [384, 416], "clips": {
+                "idle": {"file": "broken.gif", "loop": True}}}))
+            widget.load_art()
+            widget.render_frame(widget.last_seen)
+            self.assertIsNone(widget.clip_player)
+            self.assertEqual(widget.clip_error, "ClipError")
+            self.assertFalse(widget.artwork().isNull())
+            self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(widget.creature_rect.center().toPoint())), 0)
 
     @staticmethod
     def awareness_snapshot(now):

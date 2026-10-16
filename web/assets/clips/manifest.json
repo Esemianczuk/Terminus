@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "canvas": [
+    384,
+    416
+  ],
+  "clips": {
+    "idle": {
+      "file": "idle.gif",
+      "loop": true,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "moving": {
+      "file": "moving.gif",
+      "loop": true,
+      "anchors": {
+        "left": [
+          0.356,
+          0.626
+        ],
+        "right": [
+          0.644,
+          0.626
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "sleep": {
+      "file": "sleep.gif",
+      "loop": true,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "typing": {
+      "file": "typing.gif",
+      "loop": true,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "takeoff": {
+      "file": "takeoff.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.626
+        ],
+        "right": [
+          0.644,
+          0.626
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "landing": {
+      "file": "landing.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.626
+        ],
+        "right": [
+          0.644,
+          0.626
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "turn": {
+      "file": "turn.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.464,
+          0.725
+        ],
+        "right": [
+          0.536,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "wake": {
+      "file": "wake.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "poke": {
+      "file": "poke.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "sleep-in": {
+      "file": "sleep-in.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "stretch": {
+      "file": "stretch.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    },
+    "yawn": {
+      "file": "yawn.gif",
+      "loop": false,
+      "anchors": {
+        "left": [
+          0.356,
+          0.725
+        ],
+        "right": [
+          0.644,
+          0.725
+        ],
+        "center": [
+          0.5,
+          0.6709999999999999
+        ]
+      }
+    }
+  }
+}

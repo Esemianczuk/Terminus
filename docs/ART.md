@@ -19,7 +19,7 @@ The video is a preview with labels and an opaque background. It is not presented
 
 The first pass preserved the character and removed the graph. The second pass removed eyeliner-like eye corners and purple eye-socket shading, reduced the iris/gloss and retained a warm half-lidded boyish expression. The final art is the default; the original remains available for comparison and future animation studies.
 
-A matching `terminus-sleep.png` closes only the eyelids. Both renderers crossfade it over the awake body during sleep/dream. The two poses share the same 1205×1306 canvas and retain real alpha.
+A matching `terminus-sleep.png` closes only the eyelids. The web view crossfades it over the awake body during sleep/dream; the current native body uses it as a source for its sleep GIF. The two poses share the same 1205×1306 canvas and retain real alpha.
 
 ### Exact first-pass prompt
 
@@ -39,7 +39,7 @@ Identity constraints: rounded teal mantle; small fins; eight-ish flowing curls; 
 
 ## Motion boundary
 
-Procedural breathing, tint, pose interpolation and appendage accents express current core state. They are visual interpolation, not an independent personality simulation. The native body maps the approved alpha art across a continuous 40-patch texture mesh: mantle movement, flowing arms, tilts and peering can move differently. Registered awake/sleep art supplies blink envelopes, and stretch/yawn art supplies sparse alternate poses. This is a 2D image mesh plus code-drawn tendrils, rather than a full anatomical skeletal rig. The original GIFs remain intact as genuine frame animation.
+The earlier native renderer used a continuous 40-patch texture mesh. The current resident body instead draws actual cached GIF frames with finite transition clips. Registered source poses, eyelids, fins and arms are authored offline; the image rig now lives only in the CPU asset builder. The live graph and its tendrils still express current core state without becoming a second personality simulation. Original downloaded GIFs remain intact. See [GIF_ANIMATION.md](GIF_ANIMATION.md) for the current source, timing and playback details.
 
 ### Exact sleep-pose prompt
 
@@ -47,7 +47,7 @@ Procedural breathing, tint, pose interpolation and appendage accents express cur
 
 ## Additional physical key poses
 
-`web/assets/terminus-stretch.png` (1205×1306 RGBA) and `web/assets/terminus-yawn.png` (1204×1306 RGBA) were made with the built-in Image Generation tool from the approved refined body. The renderer registers their visible bounds and baseline; the source bitmaps remain intact. These supplement the continuous native texture rig rather than replacing it with unrelated frame generation. Eyes retain blunt edges, modest highlights and the same cheeky androgynous, subtly boyish expression.
+`web/assets/terminus-stretch.png` (1205×1306 RGBA) and `web/assets/terminus-yawn.png` (1204×1306 RGBA) were made with the built-in Image Generation tool from the approved refined body. Source bitmaps remain intact and now supply offline-authored finite GIF clips. Eyes retain blunt edges, modest highlights and the same cheeky androgynous, subtly boyish expression.
 
 ### Exact stretch prompt
 
