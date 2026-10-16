@@ -103,6 +103,8 @@ test('replay preserves the event ID and strips internal metadata; stale clients 
   assert.equal(uploaded.length,1);
   assert.equal(uploaded[0].body.id,pending.id);
   assert.equal(uploaded[0].body.source,'manual');
+  assert.equal(uploaded[0].body.timestamp,pending.timestamp,'offline replay retains the original observation time');
+  assert.ok(Number.isFinite(uploaded[0].body.timestamp));
   assert.equal('queuedAt' in uploaded[0].body,false);
   assert.equal('organismId' in uploaded[0].body,false);
   assert.equal(client.readOutbox().length,0,'duplicate acknowledgement drains the stable-ID action');

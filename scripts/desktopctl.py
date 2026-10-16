@@ -50,6 +50,13 @@ def owned_record() -> dict | None:
         return None
 
 
+def save_record(record: dict) -> None:
+    temporary = RECORD.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(record))
+    temporary.chmod(0o600)
+    temporary.replace(RECORD)
+
+
 def live_status(record: dict | None) -> dict | None:
     if not record:
         return None
@@ -96,7 +103,7 @@ def stop(record: dict | None) -> int:
     return 1
 
 
-def start(record: dict | None, scale: float) -> int:
+def start(record: dict | None, scale: float | None) -> int:
     if record:
         status = live_status(record)
         print("Terminus is already present on the desktop." if ready(status)
@@ -124,24 +131,27 @@ def start(record: dict | None, scale: float) -> int:
     environment = os.environ.copy()
     if environment.get("XDG_SESSION_TYPE") == "x11" and environment.get("DISPLAY"):
         environment["QT_QPA_PLATFORM"] = "xcb"
+    command = [str(python), str(ROOT / "desktop" / "overlay.py"), "--data-dir", str(DATA),
+               "--status-file", str(STATUS), "--capture-file", str(CAPTURE)]
+    if scale is not None:
+        command.extend(["--scale", str(scale)])
     with (DATA / "desktop.log").open("ab") as log:
         os.chmod(DATA / "desktop.log", 0o600)
         child = subprocess.Popen(
-            [str(python), str(ROOT / "desktop" / "overlay.py"),
-             "--data-dir", str(DATA), "--scale", str(scale),
-             "--status-file", str(STATUS), "--capture-file", str(CAPTURE)],
+            command,
             cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
             stdout=log, stderr=log, start_new_session=True)
-    record = process_identity(child.pid)
-    if not record:
-        print("Desktop launch exited early; inspect .local/desktop.log.", file=sys.stderr)
-        return 1
-    RECORD.write_text(json.dumps(record))
-    RECORD.chmod(0o600)
+    record = None
     for _ in range(100):
         if child.poll() is not None:
             break
-        status = live_status(record)
+        # The child may still be entering Python when Popen returns. Verify it
+        # during readiness polling instead of leaving it alive but unmanaged.
+        if record is None:
+            record = process_identity(child.pid)
+            if record:
+                save_record(record)
+        status = live_status(record) if record else None
         if ready(status):
             print("Terminus is present on the desktop: transparent, floating, and connected.")
             return 0
@@ -153,9 +163,9 @@ def start(record: dict | None, scale: float) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["start", "stop", "status", "restart"])
-    parser.add_argument("--scale", type=float, default=1.0)
+    parser.add_argument("--scale", type=float, default=None)
     args = parser.parse_args()
-    if not .65 <= args.scale <= 2:
+    if args.scale is not None and not .65 <= args.scale <= 2:
         parser.error("--scale must be between .65 and 2")
     DATA.mkdir(exist_ok=True, mode=0o700)
     with (DATA / "desktop-manager.lock").open("a") as lock:

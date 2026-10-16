@@ -14,8 +14,11 @@ from contextlib import asynccontextmanager, suppress
 import hashlib
 import hmac
 import ipaddress
+import logging
+import math
 from pathlib import Path
 import secrets
+import sqlite3
 import time
 from typing import Literal
 from urllib.parse import urlsplit
@@ -30,6 +33,7 @@ from .store import Store
 
 COOKIE = "terminus_session"
 SESSION_SECONDS = 7 * 24 * 60 * 60
+logger = logging.getLogger(__name__)
 
 
 class Event(BaseModel):
@@ -84,12 +88,107 @@ def same_origin(connection):
 
 
 class Service:
-    def __init__(self, store, clock=time.time):
+    def __init__(self, store, clock=time.time, *, checkpoint_interval=15.0, tick_interval=1.0):
         self.store = store
         self.clock = clock
+        self.checkpoint_interval = checkpoint_interval
+        self.tick_interval = tick_interval
+        self.started_at = clock()
+        self.last_tick_at = None
+        # These timestamps describe this process; a loaded snapshot is not a
+        # newly completed checkpoint, so report no service write until one occurs.
+        self.last_persisted_at = None
+        self.next_checkpoint_at = self.started_at + checkpoint_interval
+        self.pending_changes = False
+        self.tick_errors = self.persistence_errors = 0
+        self.last_tick_error = self.last_persistence_error = None
+        self.persistence_failures = 0
+        self.log_after = {}
+        self.ticker_task = None
         self.lock = asyncio.Lock()
         self.clients = set()
         self.buckets = defaultdict(deque)
+
+    def diagnostics(self):
+        now = self.clock()
+        last_tick = self.last_tick_at if self.last_tick_at is not None else self.started_at
+        stalled = bool(self.tick_interval and now - last_tick > max(5.0, self.tick_interval * 3))
+        stopped = bool(self.tick_interval and self.ticker_task is not None and self.ticker_task.done())
+        clock_blocked = now < max(self.store.organism.data["last_tick_at"], self.store.organism.data["server_time"])
+        clock_error = "WallClockBehindOrganism" if clock_blocked else None
+        degraded = bool(stalled or stopped or clock_blocked or self.last_tick_error or self.last_persistence_error)
+        return {"status": "degraded" if degraded else "ok", "started_at": self.started_at,
+                "ticker_enabled": bool(self.tick_interval),
+                "ticker_stalled": stalled, "ticker_stopped": stopped,
+                "clock_blocked": clock_blocked, "clock_error": clock_error,
+                "last_tick_at": self.last_tick_at, "last_persisted_at": self.last_persisted_at,
+                "checkpoint_interval": self.checkpoint_interval, "pending_changes": self.pending_changes,
+                "tick_errors": self.tick_errors, "persistence_errors": self.persistence_errors,
+                "last_tick_error": self.last_tick_error, "last_persistence_error": self.last_persistence_error}
+
+    def state(self):
+        diagnostics = self.diagnostics()
+        # Runtime facts are deliberately separate from the persisted organism.
+        # Keep the frequent snapshot compact; full diagnostics live in inspect.
+        return {**self.store.organism.state(), "runtime": {key: diagnostics[key] for key in (
+            "status", "pending_changes", "clock_blocked", "clock_error", "last_tick_error", "last_persistence_error")}}
+
+    def record_failure(self, operation, error, now):
+        name = type(error).__name__
+        if operation == "tick":
+            self.tick_errors += 1
+            self.last_tick_error = name
+            count = self.tick_errors
+        else:
+            self.persistence_errors += 1
+            self.persistence_failures += 1
+            self.last_persistence_error = name
+            count = self.persistence_failures
+            self.next_checkpoint_at = now + min(30.0, 2.0 ** min(count - 1, 5))
+        if now >= self.log_after.get(operation, -math.inf):
+            logger.warning("Terminus %s failed (%s); runtime will retry", operation, name)
+            self.log_after[operation] = now + min(60.0, 2.0 ** min(count, 6))
+
+    def persist(self, event=None, *, now=None):
+        now = self.clock() if now is None else now
+        try:
+            self.store.save(event)
+        except Exception as error:
+            self.record_failure("persistence", error, now)
+            raise
+        self.last_persisted_at = now
+        self.next_checkpoint_at = now + self.checkpoint_interval
+        self.pending_changes = False
+        self.persistence_failures = 0
+        self.last_persistence_error = None
+
+    async def step(self):
+        """Advance one coherent tick; a failed checkpoint never freezes life."""
+        from .core import Organism
+        async with self.lock:
+            now = self.clock()
+            if now < max(self.store.organism.data["last_tick_at"], self.store.organism.data["server_time"]):
+                # The core refuses backward time. Publish that blocked state
+                # without claiming a successful tick or rewriting its history.
+                await self.broadcast()
+                return
+            before = self.store.organism.dump()
+            try:
+                self.store.organism.tick(now)
+            except Exception as error:
+                self.store.organism = Organism(saved=before)
+                self.record_failure("tick", error, now)
+            else:
+                if self.store.organism.data["revision"] > before["data"]["revision"]:
+                    self.last_tick_at = now
+                    self.last_tick_error = None
+                    self.pending_changes = True
+            if self.pending_changes and now >= self.next_checkpoint_at:
+                try:
+                    self.persist(now=now)
+                except Exception:
+                    pass  # The coherent in-memory state remains available for retry.
+            await self.broadcast()
 
     def sign_session(self):
         payload = f"v1.{int(self.clock()) + SESSION_SECONDS}.{secrets.token_urlsafe(18)}"
@@ -139,7 +238,7 @@ class Service:
                     del self.buckets[old]
 
     async def broadcast(self):
-        state = self.store.organism.state()
+        state = self.state()
 
         async def send(client):
             try:
@@ -152,33 +251,43 @@ class Service:
     async def ticker(self, interval):
         while True:
             await asyncio.sleep(interval)
-            async with self.lock:
-                self.store.organism.tick(self.clock())
-                self.store.save()
-                await self.broadcast()
+            try:
+                await self.step()
+            except Exception as error:
+                # Keep the supervisor alive even if snapshot/broadcast code
+                # fails outside the transactional physiology/checkpoint paths.
+                self.record_failure("tick", error, self.clock())
 
 
-def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, clock=time.time, web_dir=None):
+def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_interval=15.0, clock=time.time, web_dir=None):
     """Build an application without starting a second organism until lifespan."""
+    if not math.isfinite(checkpoint_interval) or checkpoint_interval <= 0:
+        raise ValueError("checkpoint_interval must be positive and finite")
+    if not math.isfinite(tick_interval) or tick_interval < 0:
+        raise ValueError("tick_interval must be nonnegative and finite")
     static = Path(web_dir) if web_dir else Path(__file__).resolve().parent.parent / "web"
 
     @asynccontextmanager
     async def lifespan(app):
-        service = Service(Store(data_dir, now=clock(), seed=seed), clock=clock)
+        service = Service(Store(data_dir, now=clock(), seed=seed), clock=clock,
+                          checkpoint_interval=checkpoint_interval, tick_interval=tick_interval)
         app.state.service = service
         ticker = asyncio.create_task(service.ticker(tick_interval)) if tick_interval else None
+        service.ticker_task = ticker
         try:
             yield
         finally:
-            if ticker:
-                ticker.cancel()
-                with suppress(asyncio.CancelledError):
-                    await ticker
-            async with service.lock:
-                for client in tuple(service.clients):
-                    with suppress(Exception):
-                        await client.close(code=1001)
-                service.store.close()
+            try:
+                if ticker:
+                    ticker.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await ticker
+            finally:
+                async with service.lock:
+                    for client in tuple(service.clients):
+                        with suppress(Exception):
+                            await client.close(code=1001)
+                    service.store.close()
 
     app = FastAPI(title="Terminus", version="0.1.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
@@ -204,8 +313,11 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, clock=time.tim
         return response
 
     @app.get("/api/health")
-    async def health():
-        return {"status": "ok", "service": "terminus", "version": "0.1.0"}
+    async def health(response: Response):
+        diagnostics = app.state.service.diagnostics()
+        if diagnostics["status"] != "ok":
+            response.status_code = 503
+        return {"status": diagnostics["status"], "service": "terminus", "version": "0.1.0", "runtime": diagnostics}
 
     @app.post("/api/pair")
     async def pair(body: Pair, request: Request, response: Response):
@@ -228,13 +340,13 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, clock=time.tim
     @app.get("/api/state")
     async def state(request: Request):
         app.state.service.require(request)
-        return app.state.service.store.organism.state()
+        return app.state.service.state()
 
     @app.get("/api/inspect")
     async def inspect(request: Request):
         service = app.state.service
         service.require(request)
-        return {**service.store.organism.inspect(), "retention": {
+        return {**service.store.organism.inspect(), "runtime": service.diagnostics(), "retention": {
             "history_events": service.store.history_limit, "idempotency_events": service.store.dedup_limit}}
 
     @app.post("/api/events")
@@ -242,18 +354,30 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, clock=time.tim
         service = app.state.service
         service.require(request, mutation=True)
         async with service.lock:
-            if service.store.contains(body.id):
+            try:
+                duplicate = service.store.contains(body.id)
+            except (sqlite3.Error, OSError) as error:
+                service.record_failure("persistence", error, service.clock())
+                raise HTTPException(503, "Memory is temporarily unavailable; retry this same event", headers={"Retry-After": "5"}) from error
+            if duplicate:
                 return {"accepted": False, "revision": service.store.organism.data["revision"]}
+            now = service.clock()
+            observed_at = now if body.timestamp is None else body.timestamp
+            if observed_at > now + 120 or observed_at < now - 86460:
+                raise HTTPException(422, "Event timestamp must be within the last 24 hours and 60 seconds, with at most 120 seconds of clock skew")
             service.rate("device:" + body.device_id, 30)
             service.rate("all-events", 120)
             payload = body.model_dump(exclude={"timestamp"})
+            payload.update(observed_at=min(observed_at, now), received_at=now)
             before = service.store.organism.dump()
             try:
-                service.store.organism.event(payload, service.clock())
-                service.store.save(payload)
-            except Exception:
+                service.store.organism.event(payload, now)
+                service.persist(payload, now=now)
+            except Exception as error:
                 from .core import Organism
                 service.store.organism = Organism(saved=before)
+                if isinstance(error, (sqlite3.Error, OSError)):
+                    raise HTTPException(503, "Memory could not be saved; retry this same event", headers={"Retry-After": "5"}) from error
                 raise
             await service.broadcast()
             return {"accepted": True, "revision": service.store.organism.data["revision"]}
@@ -265,15 +389,18 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, clock=time.tim
             await socket.close(code=1008)
             return
         await socket.accept()
-        async with service.lock:
-            service.clients.add(socket)
-            await socket.send_json(service.store.organism.state())
         try:
+            async with service.lock:
+                service.clients.add(socket)
+                await asyncio.wait_for(socket.send_json(service.state()), timeout=.5)
             while True:
                 message = await socket.receive_text()
                 if len(message) > 512:
                     await socket.close(code=1009)
                     break
+        except asyncio.TimeoutError:
+            with suppress(Exception):
+                await asyncio.wait_for(socket.close(code=1011), timeout=.5)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

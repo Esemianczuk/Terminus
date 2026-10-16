@@ -146,7 +146,7 @@ def test_legacy_snapshot_migrates_scaffold_once_without_lost_state():
     for edge in old["data"]["edges"]:
         edge.pop("origin")
     restored = Organism(saved=old)
-    assert restored.data["schema_version"] == 2
+    assert restored.data["schema_version"] == 3
     assert restored.model.dump() == old["model"]
     for name in ("nodes", "organism_id", "revision", "latent", "devices", "events_seen", "recent_events"):
         assert restored.data[name] == old["data"][name]
@@ -203,6 +203,234 @@ def test_quiet_presence_never_wakes_or_prevents_returning_to_rest():
         creature.tick(second)
         resting += creature.data["behavior"] in ("sleep", "dream")
     assert resting / 2000 > .7
+
+
+def test_ethology_migration_preserves_identity_graph_model_and_random_stream():
+    creature = Organism(seed=61, now=0)
+    for i in range(12):
+        creature.event(stimulus(i, context=f"place {i % 3}"), i + 1)
+    legacy = creature.dump()
+    for field in ("traits", "motives", "gesture", "motion", "ethology", "last_model_observed_at", "source_counts"):
+        legacy["data"].pop(field)
+    legacy["data"]["schema_version"] = 2
+    restored = Organism(saved=legacy)
+    assert restored.dump()["rng"] == legacy["rng"]
+    assert restored.model.dump() == legacy["model"]
+    for field in ("organism_id", "nodes", "edges", "latent", "recent_events", "devices", "events_seen"):
+        assert restored.data[field] == legacy["data"][field]
+    assert all(.2 <= trait <= .8 for trait in restored.data["traits"].values())
+    assert Organism(saved=legacy).dump() == restored.dump()
+    assert Organism(saved=restored.dump()).dump() == restored.dump()
+
+
+def test_familiar_cues_recover_response_after_absence_without_losing_history():
+    creature = Organism(seed=19, now=0)
+    for i in range(240):
+        creature.event(stimulus(i), i + 1)
+    immediate, absent = Organism(saved=creature.dump()), Organism(saved=creature.dump())
+    immediate.event(stimulus(241), 241)
+    absent.event(stimulus(241), 2040)
+    # The larger gap also clears the live prediction context, so isolate the
+    # independent time-based habituation recovery directly as well.
+    node = creature._context_node("editor", 240)
+    assert creature._novelty(node, 2040) > creature._novelty(node, 241) * 5
+    assert absent.data["last_response"] > immediate.data["last_response"] * 2
+    assert absent._context_node("editor", 2040)["seen"] == 241
+    assert absent._context_node("editor", 2040)["familiarity"] > .98
+
+
+def test_attention_uses_learned_associations_and_lingers_on_weak_cues():
+    creature = Organism(seed=15, now=0)
+    cue = creature._context_node("cue", 0)
+    linked = creature._context_node("learned companion", 0)
+    unlinked = creature._context_node("equally familiar", 0)
+    for node in (cue, linked, unlinked):
+        node.update(seen=8, familiarity=2 / 3, novelty=1 / 3, activation=0)
+    creature._edge(cue["id"], linked["id"], .95)
+    control = Organism(saved=creature.dump())
+    control.data["edges"] = [e for e in control.data["edges"] if e.get("origin") != "learned"]
+    choices, negatives = [], []
+    for index in range(80):
+        now = index * 60
+        choices.append(creature._attend(cue, now, revisit=True)["id"])
+        negatives.append(control._attend(control._node(cue["id"]), now, revisit=True)["id"])
+    assert choices.count(linked["id"]) > 70
+    assert 15 < negatives.count(linked["id"]) < 65
+    creature.data["attention"] = linked["id"]
+    creature.data["ethology"]["linger_until"] = 6000
+    creature._attend(unlinked, 5000)
+    assert creature.data["attention"] == linked["id"]
+
+
+def test_learned_next_event_prediction_changes_attention_with_equal_counts():
+    creature = Organism(seed=123, now=0)
+    work = creature._context_node("work", 0)
+    rest = creature._context_node("break", 0)
+    for node, context in ((work, "work"), (rest, "break")):
+        node.update(seen=300, familiarity=.98, activation=0,
+                    last_bucket=creature.model.bucket("context", context))
+    for index in range(600):
+        creature.model.observe(work["last_bucket"] if index % 2 == 0 else rest["last_bucket"])
+    cue = creature._node("self")
+    scores = {node["id"]: score for node, score in creature._attention_scores(cue, 0, revisit=True)}
+    assert scores[work["id"]] > scores[rest["id"]] + .7
+    creature.model.observe(work["last_bucket"])
+    changed = {node["id"]: score for node, score in creature._attention_scores(cue, 0, revisit=True)}
+    assert changed[rest["id"]] > changed[work["id"]] + .7
+    assert work["seen"] == rest["seen"] == 300
+
+
+def test_historical_cues_do_not_claim_current_presence_or_wake_or_drag():
+    creature = Organism(seed=77, now=1000)
+    before = creature.dump()
+    for kind in ("presence", "poke", "drag"):
+        creature.event(stimulus(kind, kind=kind, observed_at=10, received_at=1000,
+                                intensity=1, x=.1, y=.9), 1000)
+        assert creature.data["last_responded"] is False
+    for field in ("behavior", "attention", "latent", "motives", "position", "gesture", "motion", "last_attention_at"):
+        assert creature.data[field] == before["data"][field]
+    assert creature.model.dump() == before["model"]
+    assert creature.data["devices"] == [{"id": "test-device", "last_seen": 10}]
+    assert creature.data["events_seen"] == 3
+    assert all(e["historical"] and e["timestamp"] == 10 and e["received_at"] == 1000
+               for e in creature.data["recent_events"])
+    assert creature._node("poke")["last_seen"] == 10
+    assert creature._node("poke")["activation"] == before["data"]["nodes"][4]["activation"]
+
+
+def test_discontinuous_observations_do_not_teach_a_false_transition():
+    creature = Organism(now=0)
+    creature.event(stimulus(0, context="yesterday"), 1)
+    yesterday = creature.data["previous_context"]
+    creature.event(stimulus(1, context="today"), 2000)
+    today = creature.data["previous_context"]
+    assert creature.model.updates == 0
+    assert creature.model.replay == []
+    assert not any({edge["source"], edge["target"]} == {yesterday, today}
+                   for edge in creature.data["edges"])
+    creature.event(stimulus(2, context="offline", observed_at=1999), 2001)
+    assert creature.model.updates == 0  # Recent reordered cues cannot teach sequence.
+    creature.event(stimulus(3, context="now"), 2002)
+    assert creature.model.updates == 1
+    assert len(creature.model.replay) == 1
+    assert any({edge["source"], edge["target"]} == {today, creature.data["previous_context"]}
+               for edge in creature.data["edges"])
+
+
+def test_recent_reordered_drag_places_without_corrupting_live_sequence_or_recency():
+    creature = Organism(now=0)
+    creature.event(stimulus(0, kind="presence", intensity=0, observed_at=100), 100)
+    before_model = creature.model.dump()
+    before_context = creature.data["previous_context"]
+    before_latent = creature.data["latent"].copy()
+    # Another device's slightly slow clock must not drop a current direct
+    # manipulation. Zero intensity places silently, just as an ordered drag.
+    creature.event(stimulus(1, context="pointer", kind="drag", intensity=0,
+                            observed_at=99, x=.2, y=.8), 101)
+    assert creature.data["position"] == {"x": .2, "y": .8}
+    assert creature.data["latent"] == before_latent
+    assert creature.data["last_responded"] is False
+    creature.event(stimulus(2, context="pointer", kind="drag", intensity=1,
+                            observed_at=98, x=.3, y=.7), 102)
+    assert creature.data["position"] == {"x": .3, "y": .7}
+    assert creature.data["last_responded"] is True
+    assert creature.data["behavior"] == "inspect"
+    assert creature.model.dump() == before_model
+    assert creature.data["previous_context"] == before_context
+    assert creature.data["last_model_observed_at"] == 100
+    assert creature.data["devices"] == [{"id": "test-device", "last_seen": 100}]
+    assert creature._context_node("pointer", 102)["last_seen"] == 99
+    assert creature.data["recent_events"][-1]["historical"] is False
+    assert creature.data["recent_events"][-1]["sequence_eligible"] is False
+    assert not any({edge["source"], edge["target"]} == {
+        before_context, creature._context_node("pointer", 102)["id"]} for edge in creature.data["edges"])
+
+
+def test_two_thousand_seconds_have_micro_life_and_rest_with_exact_continuation():
+    creature = Organism(seed=814, now=0)
+    restored = None
+    gestures, intents, behaviors = {}, set(), []
+    for now in range(1, 2001):
+        creature.tick(now)
+        if now == 1000:
+            restored = Organism(saved=json.loads(json.dumps(creature.dump())))
+        elif now > 1000:
+            restored.tick(now)
+        gesture = creature.data["gesture"]
+        if gesture:
+            gestures[gesture["id"]] = gesture["kind"]
+            assert gesture["started_at"] <= now < gesture["started_at"] + gesture["duration"]
+            assert 0 <= gesture["strength"] <= 1
+        intents.add(creature.data["motion"]["intent"])
+        behaviors.append(creature.data["behavior"])
+        assert all(0 <= value <= 1 for value in creature.data["motives"].values())
+    assert creature.dump() == restored.dump()
+    assert sum(name in ("sleep", "dream") for name in behaviors) / 2000 > .75
+    assert len(gestures) > 90
+    assert {"curl", "stretch", "blink", "peer", "tilt"} <= set(gestures.values())
+    assert {"rest", "drift", "explore"} <= intents
+    assert creature.data["events_seen"] == creature.model.updates == creature.data["consolidations"] == 0
+    assert creature.data["utterance"] is None
+    assert creature.data["ethology"]["revisits"] == 0
+    # A stopped or backwards clock is not a source of new random actions.
+    final = creature.dump()
+    creature.tick(2000)
+    creature.tick(1999)
+    assert creature.dump() == final
+
+
+def test_dreams_and_consolidation_use_experienced_memories_only():
+    creature = Organism(seed=814, now=0)
+    for i in range(20):
+        creature.event(stimulus(i, context=("making" if i % 2 else "resting"), intensity=0), i + 1)
+    live_hidden = creature.model.h.copy()
+    replays_before = len(creature.model.replay)
+    dreaming = set()
+    for now in range(21, 801):
+        creature.tick(now)
+        if creature.data["behavior"] == "dream":
+            dreaming.add(creature.data["attention"])
+            assert creature._node(creature.data["attention"])["seen"] > 0
+    assert dreaming
+    assert creature.data["consolidations"] > 20
+    assert len(creature.model.replay) == replays_before
+    assert creature.data["events_seen"] == 20
+    assert np.array_equal(creature.model.h, live_hidden)
+
+
+def test_slow_motives_causally_gate_waking_surveys_and_motion():
+    curious = Organism(seed=814, now=0)
+    curious.data["ethology"]["next_survey_at"] = 1
+    curious.data["motives"]["exploration"] = .8
+    content = Organism(saved=curious.dump())
+    content.data["motives"]["exploration"] = .05
+    for now in range(1, 41):
+        curious.tick(now)
+        content.tick(now)
+    assert curious.data["behavior"] == "inspect"
+    assert curious.data["motion"]["intent"] == "explore"
+    assert content.data["behavior"] == "sleep"
+    assert content.data["motion"]["intent"] == "rest"
+    # Survey deadlines bring an intrigued organism back to rest.
+    for now in range(41, 90):
+        curious.tick(now)
+    assert curious.data["behavior"] == "sleep"
+
+
+def test_offline_history_at_capacity_does_not_evict_current_attention():
+    creature = Organism(now=1000)
+    for i in range(50):
+        creature._context_node(f"past {i}", 1)
+    attention = creature._context_node("past 0", 1)
+    creature.data["attention"] = attention["id"]
+    creature.data["previous_context"] = attention["id"]
+    creature.data["motion"]["target_id"] = attention["id"]
+    for i in range(70):
+        creature.event(stimulus(i, context=f"offline {i}", observed_at=10, received_at=1000), 1000)
+    assert creature.data["attention"] == attention["id"]
+    assert creature.data["previous_context"] == attention["id"]
+    assert creature.data["motion"]["target_id"] == attention["id"]
+    assert creature._node(attention["id"]) is not None
 
 
 def test_sqlite_retention_restart_and_single_writer(tmp_path):

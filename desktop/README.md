@@ -19,15 +19,17 @@ A real graphical session and PyQt5 are required. On the current X11 desktop the 
 
 - The graph uses actual core nodes, edges, activation and attention. Branches softly emerge, pulse and fade; some remain faint under him as a resting surface.
 - Procedural tendrils extend from the bitmap body toward the attention region and active nodes, curling over the graph. They express shared state; they are not an independent organism model.
-- Awake and closed-eye bitmaps blend during sleep/dream transitions. Breathing, appendage motion and light are visual interpolation.
-- He makes slow, bounded excursions while awake, settles while resting, and pauses roaming while hovered, dragged, or using a menu. You can pause roaming explicitly.
+- A continuous 2D texture mesh articulates mantle, head and arms. Finite core gestures express peering, double blinks, tilts, stretches, yawns, curls and dream pulses, with registered alternate art. Touches and placements produce damped spring motion.
+- He makes bounded, accelerating excursions along the monitor's edges, settles while resting, and pauses roaming while hovered, dragged, using a menu, or receiving stale/degraded state. You can pause roaming or enable reduced motion explicitly.
 - Click the creature to poke. Drag to move the whole presence. Alt-drag changes his position within the shared graph. Some window managers reserve Alt-drag; their modifier shortcut may take precedence.
-- Right-click the body or use the tray icon for roaming, size, position, observatory and quit controls.
+- Right-click the body or use the tray icon for roaming, reduced motion, size, monitor, position, observatory and quit controls. These view preferences persist privately in `.local/desktop.ini`; explicit `--scale` overrides saved size.
 - Empty transparent regions are click-through. The input shape follows the rendered body, visible graph and tendrils. Status appears only on hover, briefly after changes, or when disconnected.
 
 The default canvas is 440×340 logical pixels, most of it transparent. The visible creature occupies roughly 190–200 pixels and carries its network with it. A per-data-directory lock prevents duplicate native bodies; smoke tests do not acquire the resident lock.
 
 The web habitat at `http://127.0.0.1:8769` remains available as an observatory and phone view. Quitting a browser does not remove the desktop body. Quitting the body does not erase learning.
+
+The body sends low-frequency observations of its own visible/exposed habitat and coarse local time. These are real local habitat observations, not a claim that the human is present or working. It does not inspect other applications, capture screens or queue automatic presence during an outage.
 
 ## Runtime evidence
 
@@ -41,4 +43,6 @@ uv run python desktop/overlay.py --smoke-test
 uv run python -m pytest -q tests/test_overlay.py tests/test_desktopctl.py
 ```
 
-The offscreen check tests network and rendering paths; it is distinct from the resident launcher's verification of an exposed desktop window. Assets are watched for updates; the refined body and matching sleep pose are preferred, with original GIF fallback. Bearer authentication remains local and redirects cannot forward its token. No login autostart is installed automatically.
+The offscreen check tests network and rendering paths; it is distinct from the resident launcher's verification of an exposed desktop window. Assets are watched for updates; missing stretch/yawn art falls back gracefully. Bearer authentication remains local and redirects cannot forward its token. No login autostart is installed automatically.
+
+`uv run python scripts/render_motion_study.py --output-dir work/motion-study` produces labelled, isolated gesture fixtures for visual review. These are controlled renderer studies, not live autonomous behavior or desktop screenshots.

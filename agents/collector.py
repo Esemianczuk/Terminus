@@ -59,6 +59,8 @@ class Outbox:
         self.db.commit()
 
     def add(self, payload: dict) -> None:
+        payload = {**payload}
+        payload.setdefault('timestamp', time.time())
         with self.db:
             self.db.execute('INSERT OR IGNORE INTO outbox VALUES (?, ?, ?)', (payload['id'], time.time(), json.dumps(payload)))
             self.db.execute('DELETE FROM outbox WHERE created < ?', (time.time() - 86400,))
@@ -68,8 +70,11 @@ class Outbox:
         sent = 0
         with self.db:
             self.db.execute('DELETE FROM outbox WHERE created < ?', (time.time() - 86400,))
-        for event_id, payload in self.db.execute('SELECT id, payload FROM outbox ORDER BY created').fetchall():
-            req = urllib.request.Request(url + '/api/events', data=payload.encode(), headers={
+        for event_id, created, payload in self.db.execute('SELECT id, created, payload FROM outbox ORDER BY created').fetchall():
+            event = json.loads(payload)
+            # Legacy outboxes still have a trustworthy local enqueue time.
+            event.setdefault('timestamp', created)
+            req = urllib.request.Request(url + '/api/events', data=json.dumps(event).encode(), headers={
                 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}, method='POST')
             try:
                 with urllib.request.urlopen(req, timeout=4) as response:
@@ -142,7 +147,7 @@ def main() -> int:
 
     def emit(kind: str, context: str, intensity: float = .3, source: str = 'live') -> None:
         queue.add({'id': str(uuid.uuid4()), 'kind': kind, 'device_id': device,
-                   'context': context[:100], 'intensity': intensity, 'source': source})
+                   'context': context[:100], 'intensity': intensity, 'source': source, 'timestamp': time.time()})
 
     if args.send:
         emit('context', args.send, .65, 'manual')

@@ -25,9 +25,9 @@ class OverlayTests(unittest.TestCase):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
         cls.app = OVERLAY.QtWidgets.QApplication.instance() or OVERLAY.QtWidgets.QApplication([])
 
-    def widget(self):
-        client = OVERLAY.CoreClient("http://127.0.0.1:8769", Path("/unused-test-data"))
-        widget = OVERLAY.Overlay(client, ROOT / "web" / "assets")
+    def widget(self, directory=None, scale=None):
+        client = OVERLAY.CoreClient("http://127.0.0.1:8769", directory or Path("/unused-test-data"))
+        widget = OVERLAY.Overlay(client, ROOT / "web" / "assets", scale)
         self.addCleanup(widget.close)
         return widget
 
@@ -53,6 +53,14 @@ class OverlayTests(unittest.TestCase):
         state = {"revision": 1, "behavior": "idle", "position": {"x": float("nan"), "y": 0.5}, "nodes": [], "edges": []}
         with self.assertRaises(ValueError):
             OVERLAY.validate_snapshot(state)
+
+    def test_malformed_animation_contract_cannot_crash_the_render_loop(self):
+        for changes in ({"server_time": float("nan")},
+                        {"gesture": {"kind": "peer", "started_at": 1000., "duration": float("inf")}},
+                        {"motion": {"intent": "explore", "started_at": 1000., "duration": 60., "target_id": []}},
+                        {"runtime": {"status": "pretend-healthy"}}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                OVERLAY.validate_snapshot({**self.snapshot(), **changes})
 
     def test_click_window_drag_and_graph_drag_are_distinct(self):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -148,27 +156,238 @@ class OverlayTests(unittest.TestCase):
         widget.hovering = False
         area = OVERLAY.QtCore.QRect(0, 36, 1920, 1044)
         before = widget.pos()
+        base = widget.last_seen
         for step in range(1800):
-            widget.advance_motion(100 + step / 10, .1, area)
+            now = base + step / 10
+            # A continuing stream of real snapshots keeps the view fresh.
+            widget.last_seen = now
+            widget.advance_motion(now, .1, area)
             self.assertTrue(area.contains(widget.geometry()))
         self.assertNotEqual(widget.pos(), before)
         self.assertEqual(state, self.snapshot())
         for condition in ("hovering", "menu_open", "roaming_paused"):
             setattr(widget, condition, True)
             before = widget.pos()
-            widget.advance_motion(1000, .2, area)
+            widget.advance_motion(now, .2, area)
             self.assertEqual(widget.pos(), before)
             setattr(widget, condition, False)
         for behavior in ("sleep", "dream", "attend", "startled", "settle"):
             state["behavior"] = behavior
             before = widget.pos()
-            widget.advance_motion(1000, .2, area)
+            widget.advance_motion(now, .2, area)
             self.assertEqual(widget.pos(), before)
         state["behavior"] = "inspect"
         widget.connected = False
         before = widget.pos()
-        widget.advance_motion(1000, .2, area)
+        widget.advance_motion(now, .2, area)
         self.assertEqual(widget.pos(), before)
+
+    def test_a_stale_snapshot_cannot_keep_roaming_or_replay_a_gesture(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=1000., gesture={"id": "g-one", "kind": "stretch", "started_at": 1000.,
+                                                "duration": 8., "strength": .7, "target_id": "work"},
+                     motion={"intent": "explore", "started_at": 1000., "duration": 60., "strength": .4})
+        widget.receive_state(state)
+        now = widget.last_seen
+        self.assertIsNotNone(widget.gesture(now + 3))
+        widget.interaction_until = widget.next_departure = 0
+        before = widget.pos()
+        widget.advance_motion(now + OVERLAY.SNAPSHOT_FRESHNESS + 1, .2)
+        self.assertEqual(widget.pos(), before)
+        self.assertIsNone(widget.gesture(now + OVERLAY.SNAPSHOT_FRESHNESS + 1))
+        widget.state["gesture"]["started_at"] = 1000 - 20
+        self.assertIsNone(widget.gesture(now))
+        widget.state["gesture"]["started_at"] = 1000 + 20
+        self.assertIsNone(widget.gesture(now))
+        widget.state["gesture"]["started_at"] = float("nan")
+        self.assertIsNone(widget.gesture(now))
+
+    def test_motion_intent_and_reduced_motion_control_real_window_travel(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=2000., motion={"intent": "rest", "started_at": 2000., "duration": 90., "strength": .3})
+        widget.receive_state(state)
+        widget.interaction_until = widget.next_departure = 0
+        widget.move(900, 600)
+        widget.roam_position = OVERLAY.QtCore.QPointF(widget.pos())
+        area = OVERLAY.QtCore.QRect(0, 36, 1920, 1044)
+        now = widget.last_seen
+        for intent in ("rest", "perch"):
+            state["motion"]["intent"] = intent
+            before = widget.pos()
+            widget.advance_motion(now, .2, area)
+            self.assertEqual(widget.pos(), before)
+        state["motion"]["intent"] = "explore"
+        for step in range(200):
+            clock = now + step * .1
+            widget.last_seen = clock
+            widget.state["server_time"] = 2000. + step * .1
+            widget.advance_motion(clock, .1, area)
+        travelled = widget.pos() - before
+        self.assertGreater(abs(travelled.x()) + abs(travelled.y()), 200)
+        widget.reduced_motion = True
+        before = widget.pos()
+        widget.advance_motion(clock, .2, area)
+        self.assertEqual(widget.pos(), before)
+        widget.reduced_motion = False
+        widget.state["server_time"] = 2200.
+        widget.advance_motion(clock, .2, area)
+        self.assertEqual(widget.pos(), before)
+
+    def test_runtime_degradation_stops_autonomy_even_when_polling_succeeds(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=2000., runtime={"status": "degraded"},
+                     gesture={"id": "g-peer", "kind": "peer", "started_at": 2000., "duration": 4., "strength": .7},
+                     motion={"intent": "explore", "started_at": 2000., "duration": 60., "strength": .4})
+        widget.receive_state(state)
+        self.assertTrue(widget.connected)
+        self.assertFalse(widget.fresh())
+        self.assertIsNone(widget.gesture(widget.last_seen))
+        widget.interaction_until = widget.next_departure = 0
+        before = widget.pos()
+        widget.advance_motion(widget.last_seen, .2)
+        self.assertEqual(widget.pos(), before)
+
+    def test_reduced_motion_keeps_pixels_still_between_core_changes(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        widget.reduced_motion = True
+        widget.status_until = 0
+        now = widget.last_seen
+        widget.render_frame(now)
+        first = widget.frame.copy()
+        widget.render_frame(now + 3)
+        self.assertEqual(widget.frame, first)
+
+    def test_animation_scheduler_is_quiet_at_rest_and_smooth_during_actions(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(behavior="sleep", server_time=1000.)
+        widget.receive_state(state)
+        now = widget.last_seen
+        self.assertGreaterEqual(widget.frame_interval(now), 125)
+        state["behavior"] = "inspect"
+        state["gesture"] = {"id": "g-peer", "kind": "peer", "started_at": 1000., "duration": 4., "strength": .7}
+        self.assertLessEqual(widget.frame_interval(now), 40)
+        self.assertGreaterEqual(widget.frame_interval(now + 6), 250)
+        widget.reduced_motion = True
+        self.assertGreaterEqual(widget.frame_interval(now), 250)
+
+    def test_an_unfinished_excursion_does_not_keep_naps_repainting_at_travel_speed(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=1000., motion={"intent": "explore", "started_at": 1000., "duration": 60., "strength": .4})
+        widget.receive_state(state)
+        now = widget.last_seen
+        widget.interaction_until = 0
+        widget.roam_goal = OVERLAY.QtCore.QPointF(widget.pos()) + OVERLAY.QtCore.QPointF(-400, 0)
+        self.assertLessEqual(widget.frame_interval(now), 40)
+        for behavior in ("sleep", "dream"):
+            state["behavior"] = behavior
+            self.assertGreaterEqual(widget.frame_interval(now), 125)
+            before = widget.pos()
+            widget.advance_motion(now, .1)
+            self.assertEqual(widget.pos(), before)
+            self.assertIsNotNone(widget.roam_goal)
+        state["gesture"] = {"id": "g-curl", "kind": "curl", "started_at": 1000., "duration": 4., "strength": .6}
+        self.assertLessEqual(widget.frame_interval(now), 66)
+        state["gesture"] = None
+        state["behavior"] = "inspect"
+        state["motion"]["intent"] = "rest"
+        self.assertGreaterEqual(widget.frame_interval(now), 66)
+
+    def test_closed_eyes_do_not_open_during_a_sleeping_blink(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(behavior="sleep", server_time=1000., gesture={"id": "g-blink", "kind": "blink", "started_at": 1000.,
+                                                                  "duration": 1.8, "strength": .6})
+        widget.receive_state(state)
+        now = widget.last_seen
+        widget.sleep_blend = 1.
+        for progress in (0., .25, .5, .78, .99):
+            self.assertEqual(widget.pose(now + progress * 1.8)["blink"], 1.)
+        widget.sleep_blend = 0.
+        self.assertGreater(widget.pose(now + .25 * 1.8)["blink"], .99)
+        self.assertLess(widget.pose(now + .5 * 1.8)["blink"], .01)
+
+    def test_repeated_core_snapshots_cannot_rewind_or_replay_a_gesture(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=1000., gesture={"id": "g-blink", "kind": "blink", "started_at": 1000.,
+                                                "duration": 1.8, "strength": .6})
+        widget.receive_state(state)
+        now = widget.last_seen
+        first_start = widget.gesture_clock_start
+        # Receiving the same snapshot again must preserve the local playhead.
+        widget.receive_state(state)
+        self.assertEqual(widget.gesture_clock_start, first_start)
+        self.assertAlmostEqual(widget.gesture(now + 1)["progress"], 1 / 1.8, places=4)
+        widget.last_seen = now + 2
+        self.assertIsNone(widget.gesture(now + 2))
+
+    def test_view_preferences_survive_restart_and_invalid_placement_is_clamped(self):
+        with tempfile.TemporaryDirectory(prefix="terminus-view-settings-") as directory:
+            path = Path(directory)
+            widget = self.widget(path)
+            widget.change_scale(.8)
+            widget.move(24, 42)
+            widget.roaming_paused = widget.reduced_motion = True
+            widget.save_view_preferences()
+            widget.close()
+            restored = self.widget(path)
+            self.assertEqual(restored.scale, .8)
+            self.assertEqual(restored.pos(), OVERLAY.QtCore.QPoint(24, 42))
+            self.assertTrue(restored.roaming_paused)
+            self.assertTrue(restored.reduced_motion)
+            self.assertEqual((path / "desktop.ini").stat().st_mode & 0o777, 0o600)
+            restored.close()
+            settings = OVERLAY.QtCore.QSettings(str(path / "desktop.ini"), OVERLAY.QtCore.QSettings.IniFormat)
+            settings.setValue("scale", "nan")
+            settings.setValue("x", 999999)
+            settings.setValue("y", -999999)
+            settings.sync()
+            repaired = self.widget(path)
+            self.assertEqual(repaired.scale, 1.)
+            left, top, right, bottom = repaired.motion_bounds()
+            self.assertTrue(left <= repaired.x() <= right)
+            self.assertTrue(top <= repaired.y() <= bottom)
+            override = self.widget(path, scale=1.3)
+            self.assertEqual(override.scale, 1.3)
+
+    def test_native_observations_describe_only_own_visibility_and_clock(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        widget.show()
+        self.app.processEvents()
+        events = []
+        widget.client.send_event = lambda kind, **fields: events.append((kind, fields))
+        widget.observe_presence()
+        self.assertEqual([kind for kind, _ in events], ["presence", "time"])
+        self.assertEqual(events[0][1]["context"], "native habitat visible")
+        self.assertTrue(all(fields["source"] == "live" and fields["intensity"] <= .1 and fields["timestamp"] > 0
+                            for _, fields in events))
+        widget.observe_presence()
+        self.assertEqual(len(events), 2)
+        widget.disconnect("offline")
+        widget.presence_at = -float("inf")
+        widget.observe_presence()
+        self.assertEqual(len(events), 2)
+
+    def test_local_touch_physics_settles_and_reduced_motion_is_still(self):
+        widget = self.widget()
+        widget.body_velocity = OVERLAY.QtCore.QPointF(25, -30)
+        widget.advance_physics(.05)
+        self.assertGreater(abs(widget.body_offset.x()) + abs(widget.body_offset.y()), .1)
+        for _ in range(200):
+            widget.advance_physics(.02)
+        self.assertLess(abs(widget.body_offset.x()) + abs(widget.body_offset.y()), .01)
+        widget.body_velocity = OVERLAY.QtCore.QPointF(25, -30)
+        widget.reduced_motion = True
+        widget.advance_physics(.1)
+        self.assertEqual(widget.body_offset, OVERLAY.QtCore.QPointF())
+        self.assertEqual(widget.body_velocity, OVERLAY.QtCore.QPointF())
 
     def test_reaching_graph_and_signs_follow_authoritative_attention_and_utterance(self):
         widget = self.widget()

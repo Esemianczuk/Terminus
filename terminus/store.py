@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import fcntl
+from contextlib import suppress
 import os
 from pathlib import Path
 import secrets
@@ -20,27 +21,33 @@ class Store:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.directory, 0o700)
-        self.lockfile = (self.directory / "organism.lock").open("a")
+        self.lockfile = None
+        self.db = None
         try:
-            fcntl.flock(self.lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self.lockfile.close()
-            raise RuntimeError("This runtime directory already has a running Terminus") from None
-        self.db = sqlite3.connect(self.directory / "organism.sqlite3", check_same_thread=False)
-        os.chmod(self.directory / "organism.sqlite3", 0o600)
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute("PRAGMA auto_vacuum=INCREMENTAL")
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS dedup (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL);
-        """)
-        row = self.db.execute("SELECT body FROM snapshot WHERE id=1").fetchone()
-        self.organism = Organism(saved=json.loads(row[0])) if row else Organism(seed=seed, now=now)
-        self.token = self._token()
-        if not row:
-            self.save()
+            self.lockfile = (self.directory / "organism.lock").open("a")
+            try:
+                fcntl.flock(self.lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("This runtime directory already has a running Terminus") from None
+            self.db = sqlite3.connect(self.directory / "organism.sqlite3", check_same_thread=False)
+            os.chmod(self.directory / "organism.sqlite3", 0o600)
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
+            self.db.execute("PRAGMA auto_vacuum=INCREMENTAL")
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS dedup (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL);
+            """)
+            row = self.db.execute("SELECT body FROM snapshot WHERE id=1").fetchone()
+            self.organism = Organism(saved=json.loads(row[0])) if row else Organism(seed=seed, now=now)
+            self.token = self._token()
+            if not row:
+                self.save()
+        except BaseException:
+            with suppress(Exception):
+                self._release()
+            raise
 
     def _token(self):
         path = self.directory / "token"
@@ -73,9 +80,32 @@ class Store:
                 self.db.execute("DELETE FROM events WHERE seq NOT IN (SELECT seq FROM events ORDER BY seq DESC LIMIT ?)", (self.history_limit,))
                 self.db.execute("DELETE FROM dedup WHERE seq NOT IN (SELECT seq FROM dedup ORDER BY seq DESC LIMIT ?)", (self.dedup_limit,))
 
+    def _release(self):
+        """Release every handle even when another cleanup operation fails."""
+        try:
+            if self.db is not None:
+                try:
+                    self.db.close()
+                finally:
+                    self.db = None
+        finally:
+            if self.lockfile is not None:
+                try:
+                    fcntl.flock(self.lockfile, fcntl.LOCK_UN)
+                finally:
+                    self.lockfile.close()
+                    self.lockfile = None
+
     def close(self):
-        self.save()
-        self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        self.db.close()
-        fcntl.flock(self.lockfile, fcntl.LOCK_UN)
-        self.lockfile.close()
+        if self.db is None:
+            return
+        try:
+            self.save()
+            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except BaseException:
+            # Preserve the save/checkpoint error for an honest failed shutdown,
+            # while allowing the next process to recover the durable snapshot.
+            with suppress(Exception):
+                self._release()
+            raise
+        self._release()

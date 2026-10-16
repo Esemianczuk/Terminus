@@ -48,6 +48,31 @@ def test_outbox_is_bounded_deduplicated_and_replayed(tmp_path):
     with patch.object(collector.urllib.request, 'urlopen', side_effect=success):
         assert queue.flush('http://127.0.0.1:8769', 'test-token') == 256
     assert len({e['id'] for e in delivered}) == 256
+    assert all(isinstance(e['timestamp'], (int, float)) for e in delivered)
+    assert queue.count() == 0
+
+
+def test_legacy_outbox_replays_original_observation_time(tmp_path):
+    queue = collector.Outbox(tmp_path / 'outbox.db')
+    payload = event(7)
+    with patch.object(collector.time, 'time', return_value=100):
+        queue.db.execute('INSERT INTO outbox VALUES (?, ?, ?)', (payload['id'], 7, json.dumps(payload)))
+        queue.db.commit()
+
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self):
+                return b'{"accepted":true}'
+
+        def delivered(req, timeout):
+            assert json.loads(req.data)['timestamp'] == 7
+            return Response()
+
+        with patch.object(collector.urllib.request, 'urlopen', side_effect=delivered):
+            assert queue.flush('http://127.0.0.1:8769', 'test-token') == 1
     assert queue.count() == 0
     assert not (tmp_path / 'outbox.db').stat().st_mode & 0o077
 

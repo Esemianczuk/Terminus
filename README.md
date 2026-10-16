@@ -16,14 +16,14 @@ uv sync --extra test --extra desktop
 uv run python scripts/desktopctl.py start
 ```
 
-Terminus appears as a native transparent, frameless, always-on-top companion. The graph travels with him; its branches fade, bloom and carry pulses while his tendrils rest on and reach toward them. He gently drifts when awake and settles when resting. Empty transparent space is click-through. Hover or right-click for controls; there is no permanent panel behind him.
+Terminus appears as a native transparent, frameless, always-on-top companion. The graph travels with him; its branches fade, bloom and carry pulses while his tendrils rest on and reach toward them. He blinks, peers, stretches, yawns, curls and makes deliberate excursions along the monitor's edges. Touch and dragging have a soft springy response. Long naps include little gestures and occasional short surveys. Empty transparent space is click-through. Hover or right-click for controls; there is no permanent panel behind him.
 
 ```sh
 uv run python scripts/desktopctl.py status
 uv run python scripts/desktopctl.py stop
 ```
 
-Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, size and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him.
+Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement and motion preferences survive a restart.
 
 The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
 
@@ -45,7 +45,7 @@ The native body and web observatory share the same organism, rather than simulat
 
 ## Give him an environment
 
-The browser contributes presence and deliberate interactions while it is open. A separate opt-in metadata collector can run on a personal computer:
+The desktop contributes coarse time and observations of its own visible habitat. The browser contributes presence and deliberate interactions while it is open. Habitat visibility does not mean its human is active. A separate opt-in metadata collector can run on a personal computer:
 
 ```sh
 # Coarse time/presence only
@@ -83,7 +83,8 @@ Tests cover controlled online prediction learning, habituation, graph updates, e
 
 - [Concept and source chats](docs/CONCEPT.md)
 - [Architecture, current boundaries and next extensions](docs/ARCHITECTURE.md)
+- [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
 - [Art sources, exact prompts and local diffusion workflow](docs/ART.md)
 - [Verification record](docs/VERIFICATION.md)
 
-The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The new body preserves Terminus's identity, removes the baked graph and refines his eyes toward cute, cheeky, androgynous and subtly masculine. High-resolution art uses procedural visual motion; a full independent skeletal/mesh rig is a later refinement.
+The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion uses a continuous 2D texture mesh, code-drawn tendrils and registered awake, sleep, stretch and yawn art. A full independent skeletal rig remains future work.

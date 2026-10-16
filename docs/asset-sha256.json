@@ -5,5 +5,7 @@
   "web/assets/running.gif": "d3fa9ecc063566626dbd1eb26e20eaef063ddbc30c9b40ffe3b614fa5aeed943",
   "web/assets/terminus-refined-v1.png": "aab6cc5f0d43054004e8735c153efec1eeaa77070b0657afb7278cc85dbd9599",
   "web/assets/terminus-refined.png": "ade6f1cab8068c086f3a3c51eb117e9b4457d82edd054ffe7fb80768817f1c2c",
-  "web/assets/terminus-sleep.png": "f7698222617ab757120a4c43df7523c9f3b18e5a70c821b845492ac727997585"
+  "web/assets/terminus-sleep.png": "f7698222617ab757120a4c43df7523c9f3b18e5a70c821b845492ac727997585",
+  "web/assets/terminus-stretch.png": "5288e5625eab4ed8306e2f14e8acb6337d69fe55374557504e735c89b5cf889f",
+  "web/assets/terminus-yawn.png": "58907c8178790e45519d3064546f8be3fc677b70a2d30db709617cbd5a25430b"
 }

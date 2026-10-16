@@ -141,9 +141,10 @@ function applyState(incoming, fromCache = false) {
     const time = epoch(state.server_time);
     if (time) serverOffset = time - Date.now();
     safeWrite('terminus.snapshot.v1', { state, receivedAt: snapshotTime });
-    setConnection('online', 'In sync');
+    const runtime = state.runtime || {};
+    setConnection('online', runtime.status === 'degraded' ? (runtime.last_tick_error || runtime.clock_error ? 'Core recovering' : 'Storage retrying') : 'In sync');
     ui.pairing.hidden = true;
-    ui.note.textContent = 'One organism · one shared state';
+    ui.note.textContent = runtime.status === 'degraded' ? 'The core is recovering · see the inspector' : 'One organism · one shared state';
     $('#sync-detail').textContent = preferences.inspector ? `Synced · revision ${state.revision ?? '—'}` : 'Your windows share one state';
   }
   ui.creature.dataset.behavior = String(state.behavior || 'idle');
@@ -249,7 +250,7 @@ function renderEvents() {
     top.append(label, time);
     const kind = document.createElement('span');
     kind.className = 'event-kind';
-    kind.textContent = [event.kind, event.source || '', event.device_id === deviceId ? 'this window' : ''].filter(Boolean).join(' · ');
+    kind.textContent = [event.kind, event.source || '', event.historical ? 'earlier observation' : '', event.device_id === deviceId ? 'this window' : ''].filter(Boolean).join(' · ');
     item.append(top, kind);
     list.append(item);
   }
@@ -280,7 +281,7 @@ function renderInspector() {
     row.append(label, track, amount); bars.append(row);
   }
   const edges = state.edges || [];
-  $('#state-provenance').textContent = JSON.stringify({organism_id:state.organism_id,revision:state.revision,server_time:state.server_time,model:learning.model,initialized:learning.initialized,device_id:deviceId,graph:{scaffold_edges:edges.filter(edge => edge.origin === 'scaffold').length,learned_edges:edges.filter(edge => edge.origin === 'learned').length,unspecified_edges:edges.filter(edge => !edge.origin).length},...(inspectResult ? {inspect:inspectResult} : {})}, null, 2);
+  $('#state-provenance').textContent = JSON.stringify({organism_id:state.organism_id,revision:state.revision,server_time:state.server_time,model:learning.model,initialized:learning.initialized,device_id:deviceId,traits:state.traits,motives:state.motives,gesture:state.gesture,motion:state.motion,attention:state.attention_detail,runtime:state.runtime,graph:{scaffold_edges:edges.filter(edge => edge.origin === 'scaffold').length,learned_edges:edges.filter(edge => edge.origin === 'learned').length,unspecified_edges:edges.filter(edge => !edge.origin).length},...(inspectResult ? {inspect:inspectResult} : {})}, null, 2);
 }
 async function fetchInspection() {
   if (!preferences.inspector || !authenticated || !connected || inspectRequest) return;
@@ -359,7 +360,7 @@ function maybePresence() {
   // Real visibility of this browser is a live observation, never a queued action.
   // Attempt at most once per five minutes, including across socket reconnects.
   lastPresenceAttempt = Date.now();
-  postEvent({id:uuid(),kind:'presence',device_id:deviceId,context:'habitat window',intensity:.12,source:'live'}).catch(() => {});
+  postEvent({id:uuid(),kind:'presence',device_id:deviceId,context:'habitat window',intensity:.12,source:'live',timestamp:Date.now()/1000}).catch(() => {});
 }
 function bufferEvent(event) {
   const buffered = eventBuffer();
@@ -371,7 +372,7 @@ function bufferEvent(event) {
   return true;
 }
 async function offerEvent(kind, context, extra = {}) {
-  const event = {id:uuid(),kind,device_id:deviceId,context:String(context || '').slice(0,80),intensity:kind === 'poke' ? .45 : .35,source:'manual',...extra};
+  const event = {id:uuid(),kind,device_id:deviceId,context:String(context || '').slice(0,80),intensity:kind === 'poke' ? .45 : .35,source:'manual',timestamp:Date.now()/1000,...extra};
   if (pairingRequired || !state) { toast('Pair this window before offering an event.'); if(navigator.onLine) ui.pairing.hidden = false; return false; }
   if (!authenticated || !connected || !navigator.onLine) return bufferEvent(event);
   try {
@@ -404,6 +405,7 @@ async function flushEvents() {
         continue;
       }
       const {queuedAt, organismId, ...event} = item;
+      if (!Number.isFinite(event.timestamp)) event.timestamp = queuedAt / 1000;
       try {
         await postEvent(event);
         writeBuffer(eventBuffer().filter(pending => pending.id !== item.id));
