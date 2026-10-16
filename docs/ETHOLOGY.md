@@ -16,11 +16,13 @@ The native body has an articulated texture mesh: the mantle breathes and shifts 
 
 The graph remains ephemeral. Soft branches and pulses are driven by actual node/edge state; contact pearls support the body; glyphs arrive from core utterances. There is no permanent status panel. Empty transparent space passes clicks through.
 
-Desktop paths can now make deliberate longer excursions around the available monitor rather than circling one corner. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. It does not read other windows or sample the screen to choose destinations.
+Desktop paths make deliberate excursions around the available monitor. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. When desktop awareness is enabled, some exploration paths can inspect a focused window's edge using its rectangle. Window content and screen images are not sampled. Actual movement drives directional swimming and smooth facing transitions.
 
 ## Real observations and history
 
-The desktop supplies low-frequency observations of its own visible/exposed body and coarse local time. These indicate a running habitat, not a human typing or being productive. Explicit touches/drags and opted-in collector observations remain separate sources. No screenshots, titles, keystrokes or file contents are captured.
+The desktop supplies low-frequency observations of its own visible/exposed body and coarse local time. These indicate a running habitat, not a human typing or being productive. Explicit touches/drags and opted-in collector observations remain separate sources. No screenshots, titles, key identities or file contents are captured.
+
+Desktop awareness additionally supplies occasional aggregate keyboard-activity cues under the fixed label `typing`. Only fresh actual activity can invite a finite core-selected imitation while awake; manual labels, silence and old events cannot. Window and optional accessible text-anchor coordinates stay local. The body eases out of tapping when current activity stops. [Details and limitations](DESKTOP_AWARENESS.md).
 
 Events retain observed and received times. Historical observations can contribute recorded associations without claiming current presence, waking the creature or moving it now. A large observation gap does not teach a false adjacent transition. Recent reordered direct manipulation remains responsive, while its out-of-order timing cannot corrupt the current learned sequence.
 

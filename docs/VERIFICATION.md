@@ -5,7 +5,7 @@
 ## Automated checks
 
 - `uv sync --extra test --extra desktop` completed in an isolated `.venv`; `uv.lock` records exact dependencies. Runtime used CPython 3.13.14. The project supports Python 3.10+.
-- `uv run python -m pytest -q`: 86 passed, plus 14 native overlay subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
+- `uv run python -m pytest -q`: 116 passed, plus 14 native overlay subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
 - `node --test tests/*.test.mjs`: 6 passed. Actual client code runs in an inert DOM harness; covers cached offline/auth-unknown queuing, confirmed 401 blocking, same-ID replay without internal metadata, isolation from stale client outboxes, bounds/expiry and service-worker access boundaries, plus graceful loading of aligned sleep artwork.
 - `node --check web/app.js` and `node --check web/service-worker.js` passed with bundled modern Node.
 - `uv run python scripts/evaluate.py --output docs/evaluation-v3.json` records the current isolated synthetic experiment; `docs/evaluation.json` retains the earlier result. After 600 balanced work/break events (599 gradient updates), frozen next-event inference is 100% accurate on 120 additional alternating events; cold model accuracy is 0.83%. This is temporal continuation of the same simple pattern, not held-out worlds, general understanding or proof of long-term intrigue. Evaluation never accesses the live organism.
@@ -73,3 +73,20 @@ The new resident body was verified on the actual X11 `xcb` session, exposed/visi
 
 
 A final 46-second resident sample included an awake survey, tendril inspection, curling, stretching and a return to sleep. The window moved from x=4539/y=1008 to x=4277/y=1040, then settled. The process used 10.24% of one CPU core across that mixed active/rest interval. This is a short live sample, not an idle average or a controlled before/after comparison. Sleeping without an active gesture returned to a 167 ms repaint interval; faster gesture/travel intervals were also observed. Final core health reported zero tick/persistence errors and the 15-second checkpoint interval. An isolated identical 22-node/23-edge sleep-frame benchmark measured 3.124 to 2.417 CPU ms per frame, separate from the live-process measurement.
+
+
+## Directional flight and desktop awareness — 2026-10-16
+
+The new gate is 116 Python tests plus 14 native subtests and six browser-client tests. New cases cover actual drag direction, bank/settling, body mirroring with world-oriented graph contacts and glyphs, finite typing imitation with real-activity gates, safe window-edge perches, unchanged input footprint despite brighter graph, event-only caret geometry, privacy whitelists, expiry, secure-source suppression, observer shutdown and unsupported/XWayland session startup.
+
+A new controlled study renders 1,007 frames at 18 fps (55.944 seconds), including flight left/right, turning, landing, window inspection and typing. Render time was median 3.315 ms, p95 4.223 ms at scale 1.3. [Directional contact sheet](screenshots/directional-vocabulary.png) is an isolated fixture, not a desktop capture or autonomous-runtime recording. Additional RGBA poses and exact built-in generation prompts are in [ART_DIRECTIONAL.md](ART_DIRECTIONAL.md).
+
+The real X11 backend reported available, found an active-window rectangle, received aggregate keyboard-activity headers without decoding key details, and closed cleanly. The optional AT-SPI helper registered successfully; its read-only probe correctly reported no caret before a fresh accessibility event. The live resident reported `caret_source=window-fallback`; exact application text-anchor tracking was not claimed as observed in that sample. A separate backend/helper teardown probe took 0.016 seconds and reaped its helper.
+
+The actual workstation was measured at device pixel ratio 1.0 on DP-0. X11 and Qt coordinates therefore agree on this host. High-DPI or mixed-scale coordinate mapping remains unverified and is a current limitation; geometry-based gazing/perches should be rechecked before claiming scaled-display support.
+
+Before upgrade, both owned processes stopped cleanly and a fresh private SQLite backup was saved. Loading that exact state into the new core preserved organism identity, learned model and RNG values exactly before ticking. After restart, the real native body was visible, exposed, topmost, frameless, translucent, no-focus and connected, with desktop awareness available. A subsequent body restart reaped the old owned caret helper and restored the same view preferences while leaving the core running.
+
+A 26-second live sleep sample included finite curl/sleep gestures and used 4.96% of one CPU core for the native process, with one caret helper. This is a short workload-specific observation, not a universal performance bound or typing/flight benchmark. Core health reported zero tick/persistence errors. No synthetic typing was injected into the live organism to manufacture a reaction. Actual drag behavior and typing rendering were verified in isolated native tests and labelled fixtures.
+
+The live browser observatory reloaded and reconnected with the clearer graph. Native graph brightness uses 1.8× gain, with a separate original-alpha input layer; regression tests compare input shapes directly. Both observer types remain absent from offscreen studies and smoke tests, and an explicit xcb-on-Wayland test prevents accidental accessibility-helper startup in an unsupported session.

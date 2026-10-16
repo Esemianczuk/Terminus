@@ -21,7 +21,7 @@ A real graphical session and PyQt5 are required. On the current X11 desktop the 
 - Procedural tendrils extend from the bitmap body toward the attention region and active nodes, curling over the graph. They express shared state; they are not an independent organism model.
 - A continuous 2D texture mesh articulates mantle, head and arms. Finite core gestures express peering, double blinks, tilts, stretches, yawns, curls and dream pulses, with registered alternate art. Touches and placements produce damped spring motion.
 - He makes bounded, accelerating excursions along the monitor's edges, settles while resting, and pauses roaming while hovered, dragged, using a menu, or receiving stale/degraded state. You can pause roaming or enable reduced motion explicitly.
-- Click the creature to poke. Drag to move the whole presence. Alt-drag changes his position within the shared graph. Some window managers reserve Alt-drag; their modifier shortcut may take precedence.
+- Click the creature to poke. Drag to move the whole presence: he banks into actual movement, trails his arms and settles on release. He smoothly turns left/right with movement or gaze; **Look** also offers explicit Left, Right and Automatic controls. Alt-drag changes his position within the shared graph. Some window managers reserve Alt-drag; their modifier shortcut may take precedence.
 - Right-click the body or use the tray icon for roaming, reduced motion, size, monitor, position, observatory and quit controls. These view preferences persist privately in `.local/desktop.ini`; explicit `--scale` overrides saved size.
 - Empty transparent regions are click-through. The input shape follows the rendered body, visible graph and tendrils. Status appears only on hover, briefly after changes, or when disconnected.
 
@@ -29,7 +29,7 @@ The default canvas is 440×340 logical pixels, most of it transparent. The visib
 
 The web habitat at `http://127.0.0.1:8769` remains available as an observatory and phone view. Quitting a browser does not remove the desktop body. Quitting the body does not erase learning.
 
-The body sends low-frequency observations of its own visible/exposed habitat and coarse local time. These are real local habitat observations, not a claim that the human is present or working. It does not inspect other applications, capture screens or queue automatic presence during an outage.
+The body sends low-frequency observations of its own visible/exposed habitat and coarse local time. These indicate a running habitat. **Notice windows and typing** adds local X11 active-window geometry and aggregate keyboard activity, with an optional event-only AT-SPI text anchor. It can look toward your work, sometimes perch beside a window during exploration, and occasionally imitate actual typing. No titles, text, individual key identities or screenshots are read. Turn the feature off in the menu or use `--no-awareness`; see [the exact scope and fallbacks](../docs/DESKTOP_AWARENESS.md). Automatic observations are never queued during an outage.
 
 ## Runtime evidence
 

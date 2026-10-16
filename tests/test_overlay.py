@@ -10,7 +10,9 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -260,6 +262,213 @@ class OverlayTests(unittest.TestCase):
         first = widget.frame.copy()
         widget.render_frame(now + 3)
         self.assertEqual(widget.frame, first)
+
+    def test_brighter_graph_does_not_expand_the_desktop_input_shape(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        widget.status_until = 0
+        now = widget.last_seen
+        widget.graph_gain = 1.
+        widget.last_mask = -float("inf")
+        widget.render_frame(now)
+        original, region = widget.frame.copy(), widget.input_region
+        widget.graph_gain = 1.8
+        widget.last_mask = -float("inf")
+        widget.render_frame(now)
+        self.assertEqual(widget.input_region, region)
+        point = widget.graph_point(.12, .22).toPoint() + OVERLAY.QtCore.QPoint(5, 0)
+        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(point)), OVERLAY.QtGui.qAlpha(original.pixel(point)))
+        self.assertEqual(OVERLAY.QtGui.qAlpha(widget.frame.pixel(0, 0)), 0)
+
+    def test_drag_velocity_banks_turns_and_settles_without_creating_core_events(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        events = []
+        widget.client.send_event = lambda kind, **fields: events.append((kind, fields))
+        now = widget.last_seen
+        widget.press_global = OVERLAY.QtCore.QPoint(600, 500)
+        widget.dragged, widget.drag_mode = True, "window"
+        for index in range(18):
+            clock = now + index / 30
+            widget.last_drag_at = clock
+            widget.drag_velocity = OVERLAY.QtCore.QPointF(600, -90)
+            widget.advance_presentation(clock, 1 / 30)
+        self.assertGreater(widget.flight_strength, .8)
+        self.assertGreater(widget.flight_bank, 4)
+        self.assertEqual(widget.facing_target, 1.)
+        previous = widget.facing
+        for index in range(18, 48):
+            clock = now + index / 30
+            widget.last_drag_at = clock
+            widget.drag_velocity = OVERLAY.QtCore.QPointF(-600, 60)
+            widget.advance_presentation(clock, 1 / 30)
+            self.assertLess(abs(widget.facing - previous), .5)
+            previous = widget.facing
+        self.assertLess(widget.facing, -.9)
+        self.assertLess(widget.flight_bank, -4)
+        widget.press_global = None
+        for index in range(48, 160):
+            widget.advance_presentation(now + index / 30, 1 / 30)
+        self.assertLess(widget.flight_strength, .01)
+        self.assertLess(abs(widget.flight_bank), .02)
+        self.assertEqual(events, [])
+
+    def test_facing_changes_body_without_mirroring_memory_contacts_or_signs(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        widget.status_until = 0
+        now = widget.last_seen
+        widget.glyph_sequence, widget.glyph_started = [4, 11, 19], now - 1
+        widget.facing = widget.facing_target = 1.
+        widget.render_frame(now)
+        original = widget.frame.copy()
+        original_points = dict(widget.graph_points)
+        anchor, _ = widget.scene_geometry(now)
+        glyph = OVERLAY.QtCore.QRect(round(anchor.x() + 104), round(widget.creature_rect.top() + 34), 20, 27)
+        widget.facing = widget.facing_target = -1.
+        widget.render_frame(now)
+        self.assertNotEqual(widget.frame, original)
+        self.assertEqual(widget.graph_points, original_points)
+        self.assertEqual(widget.frame.copy(glyph), original.copy(glyph))
+        for key, path, _ in widget.tendril_geometry(widget.graph_points, now):
+            self.assertEqual(path.pointAtPercent(1), original_points[key])
+
+    @staticmethod
+    def awareness_snapshot(now):
+        return {"available": True, "enabled": True, "observed_at": now,
+                "focused_window": {"x": 200, "y": 100, "width": 900, "height": 600, "own": False},
+                "typing": {"active": True, "last_at": now, "rate": 6., "pulse": .7, "sequence": 1},
+                "caret": {"x": 500, "y": 300, "width": 1, "height": 18},
+                "source": "x11-xinput2", "permission": "local-observation", "caret_source": "at-spi"}
+
+    def test_awareness_only_emits_bounded_real_aggregate_events_and_discards_content(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        now = widget.last_seen
+        events = []
+        widget.client.send_event = lambda kind, **fields: events.append((kind, fields))
+        snapshot = self.awareness_snapshot(now)
+        snapshot["focused_window"]["title"] = "secret content"
+        snapshot["typing"]["keycodes"] = ["secret content"]
+        snapshot["text"] = "secret content"
+        widget.receive_awareness(snapshot)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][0], "activity")
+        self.assertEqual(events[0][1]["context"], "typing")
+        self.assertEqual(events[0][1]["source"], "live")
+        self.assertEqual(events[0][1]["intensity"], .16)
+        self.assertEqual(set(events[0][1]), {"context", "source", "intensity", "timestamp"})
+        self.assertNotIn("secret content", json.dumps(widget.awareness))
+        snapshot["typing"]["sequence"] = 2
+        widget.receive_awareness(snapshot)
+        self.assertEqual(len(events), 1)
+        widget.last_typing_sent = -float("inf")
+        snapshot["typing"]["last_at"] = now - 10
+        widget.receive_awareness(snapshot)
+        self.assertEqual(len(events), 1)
+        snapshot["typing"]["last_at"] = now
+        snapshot["secure_entry"] = True
+        widget.receive_awareness(snapshot)
+        self.assertEqual(len(events), 1)
+        self.assertIsNone(widget.awareness["typing"])
+        self.assertIsNone(widget.awareness["caret"])
+        snapshot["secure_entry"] = False
+        widget.disconnect("offline")
+        widget.receive_awareness(snapshot)
+        self.assertEqual(len(events), 1)
+
+    def test_typing_pose_requires_both_authoritative_imitation_and_recent_real_activity(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=1000., gesture={"id": "g-imitate", "kind": "imitate", "started_at": 1000.,
+                                                "duration": 6., "strength": .3})
+        widget.receive_state(state)
+        now = widget.last_seen
+        widget.client.send_event = lambda *args, **fields: None
+        for step in range(10):
+            widget.advance_presentation(now + step / 30, 1 / 30)
+        self.assertEqual(widget.typing_blend, 0.)
+        self.assertEqual(widget.typing_phase, 0.)
+        widget.receive_awareness(self.awareness_snapshot(now))
+        for step in range(25):
+            widget.advance_presentation(now + step / 30, 1 / 30)
+        self.assertGreater(widget.typing_blend, .9)
+        self.assertGreater(widget.typing_phase, .5)
+        phase = widget.typing_phase
+        for step in range(40):
+            widget.advance_presentation(now + 3 + step / 30, 1 / 30)
+        self.assertLess(widget.typing_blend, .02)
+        self.assertEqual(widget.typing_phase, phase)
+        widget.receive_awareness(self.awareness_snapshot(time.monotonic()))
+        state["gesture"] = None
+        widget.typing_blend = 0.
+        widget.advance_presentation(now + .1, .1)
+        self.assertEqual(widget.typing_blend, 0.)
+
+    def test_window_inspection_perches_outside_the_observed_window_and_honors_cooldown(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        now = widget.last_seen
+        snapshot = self.awareness_snapshot(now)
+        snapshot["typing"] = None
+        widget.receive_awareness(snapshot)
+        widget.roam_step = 3
+        area = OVERLAY.QtCore.QRect(0, 36, 1920, 1044)
+        bounds = widget.motion_bounds(area)
+        position = OVERLAY.QtCore.QPointF(1400, 600)
+        motion = {"intent": "explore"}
+        target = widget.window_perch(now, position, bounds, motion)
+        self.assertIsNotNone(target)
+        self.assertTrue(bounds[0] <= target.x() <= bounds[2])
+        self.assertTrue(bounds[1] <= target.y() <= bounds[3])
+        center = target + OVERLAY.QtCore.QPointF(220, 160)
+        self.assertFalse(OVERLAY.QtCore.QRectF(200, 100, 900, 600).contains(center))
+        self.assertIsNone(widget.window_perch(now + 1, position, bounds, motion))
+        self.assertIsNone(widget.window_perch(now + 80, position, bounds, motion))
+
+    def test_optional_desktop_observers_are_offscreen_disabled_and_closed_with_the_body(self):
+        widget = self.widget()
+        widget.start_awareness()
+        self.assertIsNone(widget.awareness_provider)
+        self.assertIsNone(widget.caret_provider)
+        self.assertFalse(widget.awareness_timer.isActive())
+        lifecycle = []
+
+        class Caret:
+            def start(self):
+                lifecycle.append("caret-start")
+                return True
+            def snapshot(self):
+                return {"rect": None, "available": False}
+            def close(self):
+                lifecycle.append("caret-close")
+
+        class Awareness:
+            def __init__(self, **fields):
+                self.fields = fields
+            def start(self):
+                lifecycle.append("awareness-start")
+            def snapshot(self):
+                self.fields["caret_provider"](None)
+                return {"available": False, "enabled": True, "observed_at": time.monotonic()}
+            def close(self, timeout=1.):
+                lifecycle.append("awareness-close")
+                return True
+
+        with patch.dict(sys.modules, {"desktop.awareness": types.SimpleNamespace(DesktopAwareness=Awareness),
+                                      "desktop.caret": types.SimpleNamespace(LocalCaretObserver=Caret)}), \
+                patch.object(OVERLAY.QtWidgets.QApplication, "platformName", return_value="xcb"):
+            with patch.dict(os.environ, {"DISPLAY": ":fixture", "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-0"}):
+                widget.start_awareness()
+                self.assertIsNone(widget.caret_provider)
+                self.assertIsNone(widget.awareness_provider)
+                self.assertEqual(lifecycle, [])
+            with patch.dict(os.environ, {"DISPLAY": ":fixture", "XDG_SESSION_TYPE": "x11", "WAYLAND_DISPLAY": ""}):
+                widget.start_awareness()
+                self.assertIsInstance(widget.caret_provider, Caret)
+                self.assertIsInstance(widget.awareness_provider, Awareness)
+                widget.close()
+        self.assertEqual(lifecycle, ["caret-start", "awareness-start", "awareness-close", "caret-close"])
 
     def test_animation_scheduler_is_quiet_at_rest_and_smooth_during_actions(self):
         widget = self.widget()

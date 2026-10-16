@@ -43,13 +43,20 @@ SCENES = (
     ("curl", "settle", 3.8, "sleep"),
     ("sleep", "sleep", 4.4, "sleep"),
     ("dream", "dream", 4.2, "familiar"),
+    ("flight-right", "idle", 3.4, "curious"),
+    ("flight-left", "idle", 3.4, "curious"),
+    ("turn", "idle", 2.4, "self"),
+    ("landing", "idle", 2.8, "self"),
+    ("window-inspect", "inspect", 3.6, "context"),
+    ("typing", "attend", 5.4, "activity"),
 )
 
 
 def fixture(base, kind, behavior, duration, target, elapsed):
     state = deepcopy(base)
+    gesture_kind = "imitate" if kind == "typing" else "peer" if kind == "window-inspect" else "tilt" if kind.startswith("flight-") or kind in {"turn", "landing"} else kind
     state.update(behavior=behavior, behavior_since=1000., server_time=1000. + elapsed,
-                 attention=target, gesture={"id": "fixture-" + kind, "kind": kind,
+                 attention=target, gesture={"id": "fixture-" + kind, "kind": gesture_kind,
                      "started_at": 1000., "duration": duration, "target_id": target, "strength": .78},
                  motion={"intent": "rest", "started_at": 1000., "duration": 120., "strength": .2})
     for index, node in enumerate(state["nodes"]):
@@ -96,6 +103,38 @@ def run(output, fps, scale, video):
             widget.connected = True
             widget.last_seen = clock + timeline
             widget.sleep_blend = 1. if behavior in {"sleep", "dream"} else (.3 if kind == "curl" else 0.)
+            widget.flight_velocity = NATIVE.QtCore.QPointF()
+            widget.flight_strength = widget.flight_bank = widget.typing_blend = 0.
+            widget.facing = widget.facing_target = 1.
+            widget.awareness = {"available": False, "enabled": False, "observed_at": clock + timeline}
+            if kind in {"flight-right", "flight-left"}:
+                direction = 1 if kind.endswith("right") else -1
+                ramp = math.sin(math.pi * min(1., elapsed / duration)) ** .4
+                widget.flight_strength = .9 * ramp
+                widget.flight_velocity = NATIVE.QtCore.QPointF(direction * 460 * ramp, -90 * math.sin(elapsed * 1.7))
+                widget.flight_bank = direction * 8 * ramp
+                widget.facing = widget.facing_target = direction
+            elif kind == "turn":
+                widget.facing = math.cos(math.pi * elapsed / duration)
+                widget.facing_target = -1.
+                widget.flight_strength = .36
+                widget.flight_velocity = NATIVE.QtCore.QPointF(widget.facing * 180, 0)
+            elif kind == "landing":
+                tail = math.exp(-elapsed * 1.8)
+                widget.flight_strength = tail
+                widget.flight_velocity = NATIVE.QtCore.QPointF(320 * tail, 55 * tail)
+                widget.flight_bank = 9 * tail
+            elif kind in {"window-inspect", "typing"}:
+                widget.awareness_enabled = True
+                box = widget.geometry()
+                widget.awareness = {"available": True, "enabled": True, "observed_at": clock + timeline,
+                    "focused_window": {"x": box.x() - 620., "y": box.y() - 60., "width": 680., "height": 500., "own": False},
+                    "typing": {"active": kind == "typing", "last_at": clock + timeline, "sequence": 1, "rate": 4., "pulse": .9},
+                    "caret": None, "caret_source": "window-fallback", "secure": False}
+                if kind == "typing":
+                    widget.typing_blend = .9 * math.sin(math.pi * min(1., elapsed / duration)) ** .3
+                    widget.typing_phase = elapsed
+                    widget.facing = widget.facing_target = -1.
             if kind == "signal":
                 widget.glyph_sequence, widget.glyph_started = [1, 10, 19], clock + timeline - elapsed
             else:
@@ -110,7 +149,7 @@ def run(output, fps, scale, video):
             image = render(scene, scene[2] * phase, index * 10 + scene[2] * phase)
             image.save(str(output / (scene[0] + ".png")))
             stills.append(image)
-        sheet = NATIVE.QtGui.QImage(stills[0].width() * 2, stills[0].height() * 5, NATIVE.QtGui.QImage.Format_ARGB32)
+        sheet = NATIVE.QtGui.QImage(stills[0].width() * 2, stills[0].height() * math.ceil(len(stills) / 2), NATIVE.QtGui.QImage.Format_ARGB32)
         sheet.fill(NATIVE.QtGui.QColor("#17232a"))
         painter = NATIVE.QtGui.QPainter(sheet)
         for index, image in enumerate(stills):

@@ -23,7 +23,7 @@ uv run python scripts/desktopctl.py status
 uv run python scripts/desktopctl.py stop
 ```
 
-Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement and motion preferences survive a restart.
+Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart.
 
 The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
 
@@ -45,7 +45,9 @@ The native body and web observatory share the same organism, rather than simulat
 
 ## Give him an environment
 
-The desktop contributes coarse time and observations of its own visible habitat. The browser contributes presence and deliberate interactions while it is open. Habitat visibility does not mean its human is active. A separate opt-in metadata collector can run on a personal computer:
+The desktop contributes coarse time and observations of its own visible habitat. On X11, **Notice windows and typing** also lets him look toward the active window or an available accessible text anchor, occasionally perch beside a window, and imitate typing with his tentacles. It reads window geometry and aggregate activity, never typed text, titles or screenshots. The menu toggle or `--no-awareness` disables these observations. See [desktop awareness boundaries](docs/DESKTOP_AWARENESS.md).
+
+The browser contributes presence and deliberate interactions while it is open. Habitat visibility does not mean its human is active. A separate opt-in metadata collector can run on a personal computer:
 
 ```sh
 # Coarse time/presence only
@@ -84,7 +86,8 @@ Tests cover controlled online prediction learning, habituation, graph updates, e
 - [Concept and source chats](docs/CONCEPT.md)
 - [Architecture, current boundaries and next extensions](docs/ARCHITECTURE.md)
 - [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
+- [Directional flight, window awareness and typing](docs/DESKTOP_AWARENESS.md)
 - [Art sources, exact prompts and local diffusion workflow](docs/ART.md)
 - [Verification record](docs/VERIFICATION.md)
 
-The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion uses a continuous 2D texture mesh, code-drawn tendrils and registered awake, sleep, stretch and yawn art. A full independent skeletal rig remains future work.
+The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion uses a continuous 2D texture mesh, code-drawn tendrils and registered awake, sleep, stretch, yawn, flight and typing art. A full independent skeletal rig remains future work. [Additional art and exact prompts](docs/ART_DIRECTIONAL.md).

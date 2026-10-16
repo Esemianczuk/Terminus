@@ -346,6 +346,79 @@ def test_recent_reordered_drag_places_without_corrupting_live_sequence_or_recenc
         before_context, creature._context_node("pointer", 102)["id"]} for edge in creature.data["edges"])
 
 
+def test_real_typing_imitation_is_modest_habituating_and_not_a_generic_activity_skin():
+    fresh = Organism(seed=19, now=0)
+    fresh.data["behavior"] = "idle"
+    fresh._context_node("typing", 0)
+    familiar = Organism(saved=fresh.dump())
+    for index in range(300):
+        familiar.event(stimulus(index, kind="activity", context="typing", source="live", intensity=0), index + 1)
+    fresh_count = familiar_count = 0
+    for seed in range(200):
+        for template, label in ((fresh, "fresh"), (familiar, "familiar")):
+            instance = Organism(saved=template.dump())
+            instance.rng = np.random.default_rng(seed)
+            instance.event(stimulus(seed, kind="activity", context="typing", source="live", intensity=.16), 401)
+            imitates = instance.data["gesture"] and instance.data["gesture"]["kind"] == "imitate"
+            if label == "fresh":
+                fresh_count += bool(imitates)
+            else:
+                familiar_count += bool(imitates)
+            assert instance.data["events_seen"] == template.data["events_seen"] + 1
+    assert 10 < fresh_count < 60
+    assert 1 < familiar_count < fresh_count * .7
+    for source, context in (("manual", "typing"), ("synthetic", "typing"), ("live", "making")):
+        for seed in range(30):
+            instance = Organism(seed=seed, now=0)
+            instance.data["behavior"] = "idle"
+            instance.event(stimulus(seed, kind="activity", context=context, source=source, intensity=.16), 1)
+            assert not instance.data["gesture"] or instance.data["gesture"]["kind"] != "imitate"
+
+
+def test_background_typing_never_wakes_sleep_or_claims_stale_or_silent_activity():
+    creature = Organism(now=0)
+    quiet_attention = creature.data["last_attention_at"]
+    quiet_latent = creature.data["latent"].copy()
+    for index in range(200):
+        creature.event(stimulus(index, kind="activity", context="typing", source="live", intensity=.16), index + 1)
+        assert creature.data["behavior"] == "sleep"
+        assert creature.data["gesture"] is None
+        assert creature.data["last_responded"] is False
+    assert creature.data["latent"] == quiet_latent
+    assert creature.data["last_attention_at"] == quiet_attention
+    assert creature.model.updates == 199
+    creature.data["behavior"] = "idle"
+    for observed_at, intensity in ((200, .16), (499, 0)):
+        creature.event(stimulus(observed_at, kind="activity", context="typing", source="live",
+                                observed_at=observed_at, intensity=intensity), 500)
+        assert creature.data["gesture"] is None
+        assert creature.data["last_responded"] is False
+
+
+def test_typing_gesture_is_finite_with_persisted_cooldown_and_exact_continuation():
+    for seed in range(100):
+        creature = Organism(seed=seed, now=0)
+        creature.data["behavior"] = "idle"
+        creature.event(stimulus(seed, kind="activity", context="typing", source="live", intensity=.16), 1)
+        if creature.data["gesture"] and creature.data["gesture"]["kind"] == "imitate":
+            break
+    else:
+        pytest.fail("No awake creature responded to the controlled typing cue")
+    gesture = creature.data["gesture"].copy()
+    assert gesture["duration"] == 6
+    assert creature.data["ethology"]["last_imitated_at"] == 1
+    restored = Organism(saved=json.loads(json.dumps(creature.dump())))
+    before_rng = creature.dump()["rng"]
+    for instance in (creature, restored):
+        instance.event(stimulus("cooldown", kind="activity", context="typing", source="live", intensity=.16), 2)
+        assert instance.data["last_responded"] is False
+        assert instance.data["gesture"] == gesture
+        assert instance.dump()["rng"] == before_rng
+        instance.tick(8)
+        assert instance.data["gesture"] is None
+    assert creature.dump() == restored.dump()
+
+
 def test_two_thousand_seconds_have_micro_life_and_rest_with_exact_continuation():
     creature = Organism(seed=814, now=0)
     restored = None

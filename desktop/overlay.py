@@ -294,6 +294,31 @@ class Overlay(QtWidgets.QWidget):
         self.body_offset = QtCore.QPointF()
         self.body_velocity = QtCore.QPointF()
         self.last_drag_position = None
+        self.last_drag_at = self.started
+        self.drag_velocity = QtCore.QPointF()
+        self.flight_velocity = QtCore.QPointF()
+        self.flight_strength = 0.
+        self.flight_bank = 0.
+        self.facing = self.facing_target = 1.
+        self.facing_mode = self.preferences.value("facing", "automatic")
+        if self.facing_mode not in {"left", "right", "automatic"}:
+            self.facing_mode = "automatic"
+        if self.facing_mode == "left":
+            self.facing = self.facing_target = -1.
+        self.last_facing_change = -math.inf
+        self.typing_blend = 0.
+        self.typing_phase = 0.
+        self.graph_gain = 1.8
+        self.awareness = {"available": False, "enabled": False, "observed_at": 0.}
+        self.awareness_provider = None
+        self.caret_provider = None
+        self.awareness_enabled = self.preferences.value("desktop_awareness", True, type=bool)
+        self.last_typing_sent = -math.inf
+        self.last_typing_sequence = -1
+        self.last_window_perch = -math.inf
+        self.awareness_timer = QtCore.QTimer(self)
+        self.awareness_timer.setInterval(500)
+        self.awareness_timer.timeout.connect(self.poll_awareness)
         self.touch_started = -math.inf
         self.touch_direction = 1
         self.render_ms = 0.0
@@ -358,7 +383,7 @@ class Overlay(QtWidgets.QWidget):
         candidates = [self.assets / "terminus-refined.png", self.assets / "terminus.png", self.assets / "idle.gif"]
         art = next((path for path in candidates if path.is_file()), None)
         sleep_path = self.assets / "terminus-sleep.png"
-        optional = {kind: self.assets / ("terminus-" + kind + ".png") for kind in ("stretch", "yawn")}
+        optional = {kind: self.assets / ("terminus-" + kind + ".png") for kind in ("stretch", "yawn", "flight", "typing")}
         signature = ((str(art), art.stat().st_mtime_ns) if art else None,
                      sleep_path.stat().st_mtime_ns if sleep_path.is_file() else None,
                      tuple((kind, path.stat().st_mtime_ns if path.is_file() else None)
@@ -437,6 +462,13 @@ class Overlay(QtWidgets.QWidget):
         target_id = target_id if isinstance(target_id, str) else None
         target = self.graph_points.get(target_id)
         gaze = max(-1., min(1., (target.x() - self.creature_rect.center().x()) / 150)) if target else 0.
+        inspection = self.inspection_target(now)
+        gaze_y = 0.
+        if inspection is not None:
+            origin = QtCore.QPointF(self.x() + self.creature_rect.center().x() * self.scale,
+                                   self.y() + self.creature_rect.center().y() * self.scale)
+            gaze = max(-1., min(1., (inspection.x() - origin.x()) / 250))
+            gaze_y = max(-1., min(1., (inspection.y() - origin.y()) / 250))
         # A blink closes quickly and opens a little more slowly. The closed-eye
         # artwork is registered to the original, preserving the cheeky face.
         blink = 0.
@@ -460,12 +492,18 @@ class Overlay(QtWidgets.QWidget):
                 "ripple": elapsed if self.fresh(now) else max(0, self.last_live_frame - self.started), "blink": max(self.sleep_blend, blink),
                 "tilt": reduced * (-3.5 * self.sleep_blend + .5 * math.sin(elapsed * .43) * restful
                                     + (gaze * 7 if kind in {"peer", "tilt", "tendril-inspect"} else 0) * envelope
-                                    + touch * self.touch_direction * 3),
-                "lean": reduced * gaze * envelope * (5 if kind in {"peer", "tilt", "tendril-inspect"} else 1),
+                                    + touch * self.touch_direction * 3 + self.flight_bank
+                                    + gaze * (1 - self.sleep_blend) * (2 if inspection is not None else 0)),
+                "lean": reduced * gaze * (envelope * (5 if kind in {"peer", "tilt", "tendril-inspect"} else 1)
+                                           + (3 * (1 - self.sleep_blend) if inspection is not None else 0)),
                 "stretch": reduced * envelope if kind == "stretch" else 0.,
                 "curl": reduced * envelope if kind in {"curl", "sleep", "settle"} else 0.,
                 "startle": reduced * envelope if kind == "startled" else 0.,
-                "touch": reduced * touch, "amplitude": reduced * restful}
+                "touch": reduced * touch, "amplitude": reduced * restful,
+                "flight": reduced * self.flight_strength, "flight_x": reduced * self.flight_velocity.x(),
+                "flight_y": reduced * self.flight_velocity.y(), "typing": reduced * self.typing_blend,
+                "typing_phase": self.typing_phase, "gaze_y": gaze_y * reduced,
+                "facing": self.facing if not self.reduced_motion else (1 if self.facing_target >= 0 else -1)}
 
     def receive_state(self, state):
         self.state = state
@@ -504,6 +542,139 @@ class Overlay(QtWidgets.QWidget):
         self.status = reason
         self.update()
 
+    def start_awareness(self):
+        """Observe local geometry/event counts only in an actual X11 session."""
+        if not self.awareness_enabled or self.awareness_provider is not None or not self.awareness_supported():
+            return
+        try:
+            try:
+                from desktop.awareness import DesktopAwareness
+            except ModuleNotFoundError:
+                from awareness import DesktopAwareness
+            try:
+                try:
+                    from desktop.caret import LocalCaretObserver
+                except ModuleNotFoundError:
+                    from caret import LocalCaretObserver
+                self.caret_provider = LocalCaretObserver()
+                self.caret_provider.start()
+            except (ImportError, OSError, RuntimeError):
+                self.caret_provider = None
+            caret = (lambda window: self.caret_provider.snapshot()) if self.caret_provider is not None else None
+            self.awareness_provider = DesktopAwareness(enabled=True, poll_interval=.5, own_pid=os.getpid(), caret_provider=caret)
+            self.awareness_provider.start()
+        except (ImportError, OSError, RuntimeError):
+            if self.caret_provider is not None:
+                self.caret_provider.close()
+                self.caret_provider = None
+            self.awareness_provider = None
+            self.awareness = {"available": False, "enabled": True, "observed_at": time.monotonic(),
+                              "source": "unavailable", "permission": "unsupported"}
+            return
+        self.awareness_timer.start()
+        self.poll_awareness()
+
+    @staticmethod
+    def awareness_supported():
+        session = os.environ.get("XDG_SESSION_TYPE", "")
+        return (QtWidgets.QApplication.platformName() == "xcb" and bool(os.environ.get("DISPLAY"))
+                and session != "wayland" and not (os.environ.get("WAYLAND_DISPLAY") and session != "x11"))
+
+    def poll_awareness(self):
+        if self.awareness_provider is not None:
+            self.receive_awareness(self.awareness_provider.snapshot())
+
+    def receive_awareness(self, snapshot):
+        """Retain only bounds and aggregate activity, never titles or key data."""
+        if not isinstance(snapshot, dict):
+            return
+        now = time.monotonic()
+        observed = snapshot.get("observed_at")
+        if not isinstance(observed, (int, float)) or not math.isfinite(observed) or observed > now + 1:
+            return
+
+        def rectangle(value):
+            if (not isinstance(value, dict)
+                    or not all(isinstance(value.get(key), (int, float)) and math.isfinite(value[key]) for key in ("x", "y", "width", "height"))
+                    or not 0 < value["width"] < 100000 or not 0 < value["height"] < 100000):
+                return None
+            return {key: value[key] for key in ("x", "y", "width", "height")}
+
+        window = rectangle(snapshot.get("focused_window"))
+        if window is not None:
+            window["own"] = snapshot["focused_window"].get("own") is True
+        typing = snapshot.get("typing")
+        clean_typing = None
+        if isinstance(typing, dict):
+            last = typing.get("last_at")
+            sequence = typing.get("sequence")
+            if (isinstance(last, (int, float)) and math.isfinite(last) and last <= now + 1
+                    and isinstance(sequence, int) and not isinstance(sequence, bool) and sequence >= 0):
+                rate = typing.get("rate", 0)
+                rate = max(0., min(60., rate)) if isinstance(rate, (int, float)) and math.isfinite(rate) else 0.
+                clean_typing = {"active": typing.get("active") is True, "last_at": last,
+                                "sequence": sequence, "rate": rate, "pulse": amount(typing.get("pulse"))}
+        if snapshot.get("secure_entry") is True:
+            clean_typing = None
+        self.awareness = {"available": snapshot.get("available") is True,
+                          "enabled": snapshot.get("enabled") is True, "observed_at": observed,
+                          "focused_window": window, "typing": clean_typing,
+                          "caret": None if snapshot.get("secure_entry") is True else rectangle(snapshot.get("caret")),
+                          "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "unavailable"} else "unavailable",
+                          "permission": snapshot.get("permission") if snapshot.get("permission") in {"local-observation", "disabled", "unsupported"} else "unsupported",
+                          "caret_source": snapshot.get("caret_source") if snapshot.get("caret_source") in {"at-spi", "window-fallback"} else "window-fallback"}
+        if (self.typing_recent(now) and now - self.last_typing_sent >= 45
+                and clean_typing["active"] and clean_typing["sequence"] != self.last_typing_sequence):
+            # The payload records an actual aggregate pulse. Focused window and
+            # caret coordinates stay in this process and never enter the core.
+            observed_wall = time.time() - max(0., now - clean_typing["last_at"])
+            self.client.send_event("activity", context="typing", source="live", intensity=.16, timestamp=observed_wall)
+            self.last_typing_sent, self.last_typing_sequence = now, clean_typing["sequence"]
+
+    def awareness_fresh(self, now):
+        window = self.awareness.get("focused_window")
+        return (self.awareness_enabled and self.fresh(now) and self.awareness.get("available")
+                and self.awareness.get("enabled") and 0 <= now - self.awareness.get("observed_at", 0) <= 3
+                and isinstance(window, dict) and not window.get("own"))
+
+    def typing_recent(self, now):
+        typing = self.awareness.get("typing")
+        return (self.awareness_fresh(now) and isinstance(typing, dict)
+                and 0 <= now - typing.get("last_at", -math.inf) <= 1.8)
+
+    def inspection_target(self, now):
+        if not self.awareness_fresh(now):
+            return None
+        caret = self.awareness.get("caret")
+        if isinstance(caret, dict) and self.awareness.get("caret_source") == "at-spi" and self.typing_recent(now):
+            return QtCore.QPointF(caret["x"] + caret["width"] / 2, caret["y"] + caret["height"] / 2)
+        window = self.awareness["focused_window"]
+        rect = QtCore.QRectF(window["x"], window["y"], window["width"], window["height"])
+        origin = QtCore.QPointF(self.x() + self.creature_rect.center().x() * self.scale,
+                               self.y() + self.creature_rect.center().y() * self.scale)
+        target = QtCore.QPointF(max(rect.left(), min(rect.right(), origin.x())),
+                               max(rect.top(), min(rect.bottom(), origin.y())))
+        if rect.contains(origin):
+            options = [QtCore.QPointF(rect.left(), origin.y()), QtCore.QPointF(rect.right(), origin.y()),
+                       QtCore.QPointF(origin.x(), rect.top()), QtCore.QPointF(origin.x(), rect.bottom())]
+            target = min(options, key=lambda point: math.hypot(point.x() - origin.x(), point.y() - origin.y()))
+        return target
+
+    def toggle_awareness(self, checked=False):
+        self.awareness_enabled = not self.awareness_enabled
+        if self.awareness_enabled:
+            self.start_awareness()
+        else:
+            self.awareness_timer.stop()
+            if self.awareness_provider is not None:
+                self.awareness_provider.close(timeout=1.)
+                self.awareness_provider = None
+            if self.caret_provider is not None:
+                self.caret_provider.close()
+                self.caret_provider = None
+            self.awareness = {"available": False, "enabled": False, "observed_at": time.monotonic()}
+        self.save_view_preferences()
+
     @staticmethod
     def graph_point(x, y):
         return QtCore.QPointF(48 + amount(x) * 344, 156 + amount(y) * 146)
@@ -526,7 +697,7 @@ class Overlay(QtWidgets.QWidget):
         width = height * (art.width() / art.height() if not art.isNull() else .92)
         width *= 1 + self.sleep_blend * .07
         self.creature_rect = QtCore.QRectF(anchor.x() - width / 2 + self.body_offset.x(),
-                                         anchor.y() - height + 10 + self.body_offset.y(), width, height)
+                                         anchor.y() - height + 10 + self.body_offset.y() - self.flight_strength * 9, width, height)
         self.cache_graph(state)
         return anchor, self.graph_points
 
@@ -575,9 +746,14 @@ class Overlay(QtWidgets.QWidget):
         for index, key in enumerate(selected[:3]):
             target = points[key]
             side = -1 if target.x() < center.x() else 1
-            # These anchors emerge behind the existing outer tentacles.
-            start = QtCore.QPointF(center.x() + side * rect.width() * .32,
-                                  rect.top() + rect.height() * (.75 + .045 * index))
+            # Flight raises the attachment points into the opaque mantle/arm
+            # junction. Apply the exact body turn/bank transform to each root;
+            # the actual graph contact stays in world coordinates.
+            flying = smoothstep(.15, .85, pose["flight"])
+            reach_side = side * (1 if pose["facing"] >= 0 else -1)
+            u = .5 + reach_side * (.32 * (1 - flying) + .16 * flying)
+            v = (.75 + .045 * index) * (1 - flying) + (.57 + .025 * index) * flying
+            start = self.body_transform(pose).map(self.mesh_point(u, v, pose))
             active = amount(nodes[key].get("activation"))
             gesture = 5 * math.sin(elapsed * .75 + index * 2.2) * pose["amplitude"]
             reaching = pose["gesture"] if key == attention else pose["stretch"] * .7
@@ -586,11 +762,14 @@ class Overlay(QtWidgets.QWidget):
             # the arms with different phases rather than moving in lockstep.
             reach = reaching * (20 if pose["kind"] in {"peer", "tendril-inspect", "signal"} else 10)
             curl = pose["curl"] * (16 + index * 4)
+            trail = QtCore.QPointF(max(-22, min(22, -pose["flight_x"] * .035)),
+                                   max(-14, min(14, -pose["flight_y"] * .025)))
+            tapping = math.sin(pose["typing_phase"] * 8 + index * 2.5) * pose["typing"]
             curve = QtGui.QPainterPath(start)
             curve.cubicTo(start + QtCore.QPointF(side * (32 + active * 18 + reach - curl),
-                                                14 + gesture - pose["stretch"] * 18),
+                                                14 + gesture - pose["stretch"] * 18 - tapping * 7) + trail,
                           target + QtCore.QPointF(-side * (24 + active * 12 + curl),
-                                                 20 + gesture - reach + curl), target)
+                                                 20 + gesture - reach + curl + tapping * 3), target)
             gestures.append((key, curve, active))
         return gestures
 
@@ -744,7 +923,17 @@ class Overlay(QtWidgets.QWidget):
         y += (v - .5) * arms * (.12 * pose["stretch"] - .11 * pose["curl"])
         y -= pose["startle"] * .055 * (1 - arms * .35)
         y += pose["touch"] * .022 * (1 - v)
-        return QtCore.QPointF(rect.left() + x * rect.width() + pose["lean"] * mantle,
+        facing_sign = 1 if pose["facing"] >= 0 else -1
+        # The fan trails behind actual motion. Local coordinates compensate for
+        # the body mirror so a leftward flight still trails to screen-right.
+        x -= arms * max(-.11, min(.11, pose["flight_x"] / 2300)) * facing_sign * pose["flight"]
+        y -= arms * max(-.035, min(.035, pose["flight_y"] / 3600)) * pose["flight"]
+        x += arms * (u - .5) * pose["flight"] * .08
+        tapping = math.sin(pose["typing_phase"] * 9 + u * 12) * pose["typing"]
+        y += arms * .020 * tapping
+        x += arms * .008 * math.cos(pose["typing_phase"] * 7 + u * 9) * pose["typing"]
+        y += mantle * pose["gaze_y"] * .009
+        return QtCore.QPointF(rect.left() + x * rect.width() + pose["lean"] * mantle * facing_sign,
                               rect.top() + y * rect.height())
 
     def draw_body(self, painter, now):
@@ -754,9 +943,16 @@ class Overlay(QtWidgets.QWidget):
         pose = self.pose(now)
         layers = []
         close = amount(pose["blink"])
-        optional = self.pose_art.get(pose["kind"])
-        optional_blend = (math.sin(math.pi * pose["progress"]) ** 2
-                          if optional is not None and not optional.isNull() and not self.reduced_motion else 0.)
+        display_kind = "typing" if pose["typing"] > .02 else "flight" if pose["flight"] > .25 else pose["kind"]
+        optional = self.pose_art.get(display_kind)
+        if display_kind == "typing":
+            optional_blend = pose["typing"]
+        elif display_kind == "flight":
+            optional_blend = smoothstep(.25, .85, pose["flight"])
+        else:
+            optional_blend = math.sin(math.pi * pose["progress"]) ** 2
+        if optional is None or optional.isNull() or self.reduced_motion:
+            optional_blend = 0.
         if optional_blend > .01:
             layers = [(art, 1 - optional_blend), (optional, optional_blend)]
         elif self.sleep_art.isNull() or close < .005:
@@ -768,10 +964,7 @@ class Overlay(QtWidgets.QWidget):
             # the awake face gives a soft blink without distorting the eyes.
             layers = [(art, 1.), (self.sleep_art, close)]
         painter.save()
-        pivot = self.creature_rect.center() + QtCore.QPointF(0, 30)
-        painter.translate(pivot)
-        painter.rotate(pose["tilt"])
-        painter.translate(-pivot)
+        painter.setTransform(self.body_transform(pose), True)
         base_opacity = painter.opacity()
         # Adjacent patches share vertices, so the photograph never separates
         # into visible cutout pieces. The face receives only gentle mantle
@@ -806,22 +999,39 @@ class Overlay(QtWidgets.QWidget):
                         painter.restore()
         painter.restore()
 
+    def body_transform(self, pose):
+        pivot = self.creature_rect.center() + QtCore.QPointF(0, 30)
+        turn = max(.045, abs(pose["facing"])) * (1 if pose["facing"] >= 0 else -1)
+        transform = QtGui.QTransform()
+        transform.translate(pivot.x(), pivot.y())
+        transform.rotate(pose["tilt"])
+        transform.scale(turn, 1 + (1 - abs(turn)) * .035)
+        transform.translate(-pivot.x(), -pivot.y())
+        return transform
+
     def render_frame(self, now):
         started = time.perf_counter()
         if self.fresh(now):
             self.last_live_frame = now
         clock = self.last_live_frame
         elapsed = 0 if self.reduced_motion else max(0, clock - self.started)
-        frame = QtGui.QImage(self.size(), QtGui.QImage.Format_ARGB32_Premultiplied)
-        frame.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(frame)
+        anchor, points = self.scene_geometry(now)
+        gestures = self.tendril_geometry(points, now)
+        graph = QtGui.QImage(self.size(), QtGui.QImage.Format_ARGB32_Premultiplied)
+        graph.fill(QtCore.Qt.transparent)
+        graph_painter = QtGui.QPainter(graph)
+        graph_painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        graph_painter.scale(self.scale, self.scale)
+        graph_painter.setOpacity(1 if self.connected else .48)
+        self.draw_graph(graph_painter, points, elapsed, {key for key, _, _ in gestures})
+        graph_painter.end()
+        foreground = QtGui.QImage(self.size(), QtGui.QImage.Format_ARGB32_Premultiplied)
+        foreground.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(foreground)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
         painter.scale(self.scale, self.scale)
-        anchor, points = self.scene_geometry(now)
         painter.setOpacity(1 if self.connected else .48)
-        gestures = self.tendril_geometry(points, now)
-        self.draw_graph(painter, points, elapsed, {key for key, _, _ in gestures})
         self.draw_tendrils(painter, gestures, self.started if self.reduced_motion else clock)
         self.draw_body(painter, now)
         painter.setOpacity(1)
@@ -858,10 +1068,23 @@ class Overlay(QtWidgets.QWidget):
             painter.drawText(label.adjusted(8, 0, -8, 0), QtCore.Qt.AlignCenter,
                              metrics.elidedText(text, QtCore.Qt.ElideRight, int(label.width() - 16)))
         painter.end()
+        frame = graph.copy()
+        composite = QtGui.QPainter(frame)
+        composite.setOpacity(amount(self.graph_gain - 1))
+        composite.drawImage(0, 0, graph)
+        composite.setOpacity(1)
+        composite.drawImage(0, 0, foreground)
+        composite.end()
         self.frame = frame
         mask_interval = .45 if self.sleep_blend > .8 or self.reduced_motion else .24
         if now - self.last_mask > mask_interval or self.input_region.isEmpty():
-            self.update_input_mask(frame)
+            # Brighter light must not intercept more of the desktop. The input
+            # shape uses the original graph alpha, before the visual boost.
+            input_frame = graph.copy()
+            mask_painter = QtGui.QPainter(input_frame)
+            mask_painter.drawImage(0, 0, foreground)
+            mask_painter.end()
+            self.update_input_mask(input_frame)
             self.last_mask = now
         self.render_ms = (time.perf_counter() - started) * 1000
 
@@ -901,6 +1124,7 @@ class Overlay(QtWidgets.QWidget):
         self.sleep_blend = target if self.reduced_motion else self.sleep_blend + (target - self.sleep_blend) * (1 - math.exp(-dt / .7))
         self.advance_physics(dt)
         self.advance_motion(now, dt)
+        self.advance_presentation(now, dt)
         self.render_frame(now)
         self.update()
 
@@ -915,6 +1139,8 @@ class Overlay(QtWidgets.QWidget):
             return 66 if (self.state or {}).get("behavior") in {"sleep", "dream"} else 33
         if self.glyph_sequence and now - self.glyph_started < 7:
             return 50
+        if self.flight_strength > .025 or abs(self.facing - self.facing_target) > .015 or self.typing_blend > .02:
+            return 33
         if self.roam_goal is not None and self.can_roam(now):
             return 40
         return 167 if (self.state or {}).get("behavior") in {"sleep", "dream"} else 66
@@ -934,6 +1160,61 @@ class Overlay(QtWidgets.QWidget):
             remaining -= step
         self.body_offset.setX(max(-9, min(9, self.body_offset.x())))
         self.body_offset.setY(max(-9, min(9, self.body_offset.y())))
+
+    def advance_presentation(self, now, dt):
+        """Animate actual movement/activity without inventing an observation."""
+        dt = min(.2, max(0., dt))
+        if self.reduced_motion:
+            self.flight_velocity = QtCore.QPointF()
+            self.flight_strength = self.flight_bank = self.typing_blend = 0.
+            self.facing = self.facing_target
+            return
+        dragging = self.press_global is not None and self.dragged and self.drag_mode == "window"
+        target_velocity = QtCore.QPointF()
+        if dragging and 0 <= now - self.last_drag_at < .18:
+            target_velocity = self.drag_velocity
+        elif self.roam_goal is not None and self.can_roam(now):
+            target_velocity = self.roam_velocity / self.scale
+        self.flight_velocity += (target_velocity - self.flight_velocity) * (1 - math.exp(-dt / (.13 if dragging else .32)))
+        speed = math.hypot(self.flight_velocity.x(), self.flight_velocity.y())
+        strength = amount(speed / 180)
+        if not dragging and self.can_roam(now):
+            strength = max(strength, min(.32, speed / 70))
+        self.flight_strength += (strength - self.flight_strength) * (1 - math.exp(-dt / .22))
+        bank = max(-14, min(14, self.flight_velocity.x() / 45))
+        bank += max(-5, min(5, self.flight_velocity.y() / 80)) * (1 if self.facing_target >= 0 else -1)
+        self.flight_bank += (bank - self.flight_bank) * (1 - math.exp(-dt / .18))
+
+        desired = self.facing_target
+        if self.facing_mode in {"left", "right"}:
+            desired = -1. if self.facing_mode == "left" else 1.
+        elif abs(self.flight_velocity.x()) > 9:
+            desired = 1. if self.flight_velocity.x() > 0 else -1.
+        elif not dragging and now - self.last_facing_change > 1.2:
+            inspection = self.inspection_target(now)
+            if inspection is not None and (self.state or {}).get("behavior") not in {"sleep", "dream"}:
+                dx = inspection.x() - (self.x() + self.creature_rect.center().x() * self.scale)
+                if abs(dx) > 90:
+                    desired = 1. if dx > 0 else -1.
+            else:
+                gesture = self.gesture(now)
+                if gesture and gesture.get("kind") in {"peer", "tilt", "tendril-inspect"}:
+                    target = self.graph_points.get(gesture.get("target_id"))
+                    if target is not None and abs(target.x() - self.creature_rect.center().x()) > 70:
+                        desired = 1. if target.x() > self.creature_rect.center().x() else -1.
+        if desired != self.facing_target and now - self.last_facing_change > (.15 if dragging else .7):
+            self.facing_target = desired
+            self.last_facing_change = now
+        self.facing += (self.facing_target - self.facing) * (1 - math.exp(-dt / .14))
+        if abs(self.facing - self.facing_target) < .002:
+            self.facing = self.facing_target
+
+        gesture = self.gesture(now)
+        imitate = (gesture and gesture.get("kind") == "imitate" and self.typing_recent(now)
+                   and not dragging and self.flight_strength < .25)
+        self.typing_blend += ((1. if imitate else 0.) - self.typing_blend) * (1 - math.exp(-dt / .28))
+        if imitate:
+            self.typing_phase += dt * (.7 + min(12., self.awareness["typing"].get("rate", 0)) * .08)
 
     def motion_bounds(self, area=None):
         screen = self.home_screen or self.screen() or QtWidgets.QApplication.primaryScreen()
@@ -958,7 +1239,9 @@ class Overlay(QtWidgets.QWidget):
             if now < self.next_departure:
                 return
             self.roam_step += 1
-            self.roam_goal = self.next_perch(position, (left, top, right, bottom), motion)
+            self.roam_goal = self.window_perch(now, position, (left, top, right, bottom), motion)
+            if self.roam_goal is None:
+                self.roam_goal = self.next_perch(position, (left, top, right, bottom), motion)
         delta = self.roam_goal - position
         distance = math.hypot(delta.x(), delta.y())
         exploring = isinstance(motion, dict) and motion.get("intent") == "explore"
@@ -1039,6 +1322,27 @@ class Overlay(QtWidgets.QWidget):
             return QtCore.QPointF(right - along, bottom)
         return QtCore.QPointF(left, bottom - (along - width))
 
+    def window_perch(self, now, position, bounds, motion):
+        if (not isinstance(motion, dict) or motion.get("intent") != "explore" or self.roam_step % 3
+                or now - self.last_window_perch < 75 or not self.awareness_fresh(now)):
+            return None
+        window = self.awareness["focused_window"]
+        left, top, right, bottom = bounds
+        candidates = [QtCore.QPointF(window["x"] - self.width() + 68 * self.scale,
+                                     window["y"] + min(window["height"] * .3, 160)),
+                      QtCore.QPointF(window["x"] + window["width"] - 68 * self.scale,
+                                     window["y"] + min(window["height"] * .3, 160)),
+                      QtCore.QPointF(window["x"] + window["width"] * .75 - self.width() / 2,
+                                     window["y"] - self.height() + 55 * self.scale)]
+        candidates = [QtCore.QPointF(max(left, min(right, point.x())), max(top, min(bottom, point.y()))) for point in candidates]
+        # Local geometry chooses a nearby outside perch. It never moves toward
+        # the caret or crosses into the centre to chase a typing target.
+        target = min(candidates, key=lambda point: math.hypot(point.x() - position.x(), point.y() - position.y()))
+        if math.hypot(target.x() - position.x(), target.y() - position.y()) < 70:
+            return None
+        self.last_window_perch = now
+        return target
+
     def _logical(self, point):
         return QtCore.QPointF(point.x() / self.scale, point.y() / self.scale)
 
@@ -1071,6 +1375,8 @@ class Overlay(QtWidgets.QWidget):
         self.dragged = False
         self.drag_mode = "graph" if event.modifiers() & QtCore.Qt.AltModifier else "window"
         self.last_drag_position = event.globalPos()
+        self.last_drag_at = time.monotonic()
+        self.drag_velocity = QtCore.QPointF()
         self.interaction_until = time.monotonic() + 8
         self.setCursor(QtCore.Qt.ClosedHandCursor)
         event.accept()
@@ -1088,6 +1394,15 @@ class Overlay(QtWidgets.QWidget):
                 if self.last_drag_position is not None and not self.reduced_motion:
                     movement = event.globalPos() - self.last_drag_position
                     self.body_velocity += QtCore.QPointF(-movement.x() * .8, -movement.y() * .8)
+                    now = time.monotonic()
+                    elapsed = max(.008, min(.2, now - self.last_drag_at))
+                    velocity = QtCore.QPointF(movement.x() / elapsed / self.scale, movement.y() / elapsed / self.scale)
+                    speed = math.hypot(velocity.x(), velocity.y())
+                    if speed > 1800:
+                        velocity *= 1800 / speed
+                    self.drag_velocity += (velocity - self.drag_velocity) * .6
+                    self.last_drag_at = now
+                    self.animation.setInterval(33)
                 self.last_drag_position = event.globalPos()
             elif self.connected:
                 self.drag_target = self._logical(event.pos())
@@ -1128,6 +1443,7 @@ class Overlay(QtWidgets.QWidget):
         self.roam_velocity = QtCore.QPointF()
         self.roam_goal = None
         self.advance_physics(0)
+        self.advance_presentation(time.monotonic(), 0)
         self.status_until = time.monotonic() + 4
         self.save_view_preferences()
         self.render_frame(time.monotonic())
@@ -1139,6 +1455,8 @@ class Overlay(QtWidgets.QWidget):
         self.preferences.setValue("scale", self.scale)
         self.preferences.setValue("pause_roaming", self.roaming_paused)
         self.preferences.setValue("reduced_motion", self.reduced_motion)
+        self.preferences.setValue("desktop_awareness", self.awareness_enabled)
+        self.preferences.setValue("facing", self.facing_mode)
         self.preferences.setValue("x", self.x())
         self.preferences.setValue("y", self.y())
         self.preferences.setValue("monitor", self.home_screen.name() if self.home_screen else "")
@@ -1180,6 +1498,19 @@ class Overlay(QtWidgets.QWidget):
         self.render_frame(time.monotonic())
         self.save_view_preferences()
 
+    def set_facing_mode(self, mode):
+        if mode not in {"left", "right", "automatic"}:
+            return
+        self.facing_mode = mode
+        if mode != "automatic":
+            self.facing_target = -1. if mode == "left" else 1.
+        self.last_facing_change = -math.inf
+        if self.reduced_motion:
+            self.facing = self.facing_target
+        else:
+            self.animation.setInterval(33)
+        self.save_view_preferences()
+
     def make_menu(self):
         menu = QtWidgets.QMenu(self)
         menu.addAction("&Open habitat", lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.client.url)))
@@ -1191,6 +1522,18 @@ class Overlay(QtWidgets.QWidget):
         reduce.setCheckable(True)
         reduce.setChecked(self.reduced_motion)
         reduce.triggered.connect(self.toggle_reduced_motion)
+        facing = menu.addMenu("&Look")
+        for label, mode in (("Automatic", "automatic"), ("Left", "left"), ("Right", "right")):
+            action = facing.addAction(label, lambda checked=False, value=mode: self.set_facing_mode(value))
+            action.setCheckable(True)
+            action.setChecked(self.facing_mode == mode)
+            menu.aboutToShow.connect(lambda item=action, value=mode: item.setChecked(self.facing_mode == value))
+        observe = menu.addAction("Notice windows and &typing")
+        observe.setCheckable(True)
+        observe.setChecked(self.awareness_enabled)
+        observe.setEnabled(self.awareness_supported())
+        observe.triggered.connect(self.toggle_awareness)
+        menu.aboutToShow.connect(lambda: observe.setChecked(self.awareness_enabled))
         sizes = menu.addMenu("&Size")
         for label, scale in (("Small", .8), ("Companion", 1.), ("Large", 1.3), ("Extra large", 1.6)):
             action = sizes.addAction(label, lambda checked=False, value=scale: self.change_scale(value))
@@ -1254,6 +1597,13 @@ class Overlay(QtWidgets.QWidget):
         self.animation.stop()
         self.asset_timer.stop()
         self.presence_timer.stop()
+        self.awareness_timer.stop()
+        if self.awareness_provider is not None:
+            self.awareness_provider.close(timeout=1.)
+            self.awareness_provider = None
+        if self.caret_provider is not None:
+            self.caret_provider.close()
+            self.caret_provider = None
         if self.tray:
             self.tray.hide()
         super().closeEvent(event)
@@ -1277,6 +1627,10 @@ class Overlay(QtWidgets.QWidget):
                 "organism_id": state.get("organism_id"), "revision": state.get("revision"),
                 "behavior": state.get("behavior"), "roaming_paused": self.roaming_paused,
                 "reduced_motion": self.reduced_motion, "snapshot_fresh": self.fresh(),
+                "facing": "left" if self.facing < 0 else "right", "facing_mode": self.facing_mode,
+                "flight_strength": round(self.flight_strength, 3), "typing_pose": self.typing_blend > .05,
+                "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
+                                      "source": self.awareness.get("source", "unavailable"), "caret_source": self.awareness.get("caret_source", "window-fallback")},
                 "frame_interval_ms": self.animation.interval(), "render_ms": round(self.render_ms, 2),
                 "input_mask_ms": round(self.mask_ms, 2),
                 "gesture": (self.gesture(time.monotonic()) or {}).get("kind"),
@@ -1294,6 +1648,7 @@ def main(argv=None):
     parser.add_argument("--scale", type=float, default=None, help="Overlay size multiplier, 0.65 to 2; default restores this body's setting")
     parser.add_argument("--no-roam", action="store_true", help="Keep the desktop companion where placed")
     parser.add_argument("--reduced-motion", action="store_true", help="Keep the body, graph and perches still")
+    parser.add_argument("--no-awareness", action="store_true", help="Do not observe focused-window bounds or aggregate typing")
     parser.add_argument("--status-file", type=Path, help="Write native-view diagnostics here once per second")
     parser.add_argument("--capture-file", type=Path, help="Save one image of this widget after it is exposed and connected")
     parser.add_argument("--smoke-test", action="store_true", help="Offscreen network + render check; exits without sending events")
@@ -1324,7 +1679,11 @@ def main(argv=None):
         overlay.roaming_paused = True
     if args.reduced_motion:
         overlay.reduced_motion = True
+    if args.no_awareness:
+        overlay.awareness_enabled = False
     overlay.show()
+    if not args.smoke_test:
+        overlay.start_awareness()
     # A short Qt timer gives Python a regular opportunity to receive SIGTERM.
     signal.signal(signal.SIGTERM, lambda signum, frame: app.quit())
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())

@@ -237,7 +237,8 @@ class Organism:
         # brief in the renderer; the envelope outlives the native 1 Hz poll.
         durations = {"blink": 1.8, "peer": 3.4, "tilt": 2.8, "stretch": 5.8,
                      "yawn": 4.4, "tendril-inspect": 5.2, "startled": 1.25,
-                     "curl": 5.8, "settle": 5., "sleep": 6.5, "dream": 7., "signal": 4.8}
+                     "curl": 5.8, "settle": 5., "sleep": 6.5, "dream": 7., "signal": 4.8,
+                     "imitate": 6.}
         d, policy = self.data, self.data["ethology"]
         policy["gesture_serial"] += 1
         duration = durations[kind] if duration is None else duration
@@ -464,7 +465,22 @@ class Organism:
             probability *= .35
             if resting and strength < .45:
                 probability = 0.
-        responds = strength > 0 and self.rng.random() < probability
+        typing_cue = kind == "activity" and context.casefold() == "typing" and event["source"] == "live"
+        typing_eligible = (typing_cue and current and now - observed_at <= 8 and not resting
+                           and lat["agitation"] < .5 and event["intensity"] > 0
+                           and now - d["ethology"].get("last_imitated_at", -math.inf) >= 45)
+        if typing_cue:
+            if typing_eligible:
+                # An occasional little imitation can survive familiarity while
+                # remaining quieter than a novel stimulus. It is grounded only
+                # in a fresh aggregate activity cue, never inferred text/caret.
+                interest = (clamp(event["intensity"] / .16) * (.05 + .07 * novelty + .06 * surprise)
+                            * (.65 + .30 * d["traits"]["curiosity"]))
+                probability = max(probability, interest)
+            else:
+                probability = 0.
+        responds = (strength > 0 and (not typing_cue or typing_eligible)
+                    and self.rng.random() < probability)
         explicit_drag = current and kind == "drag" and event.get("x") is not None and event.get("y") is not None
         if explicit_drag:
             # Direct manipulation always moves the creature, including a silent
@@ -477,7 +493,7 @@ class Organism:
             d["last_attention_at"] = now
             if kind in ("poke", "drag"):
                 d["ethology"]["survey_until"] = 0.
-            self._attend(node, now)
+            self._attend(node, now, reason="typing" if typing_cue else "cue")
             d["motives"]["exploration"] = clamp(d["motives"]["exploration"] - strength * .1)
             if kind == "presence":
                 d["motives"]["affiliation"] = clamp(d["motives"]["affiliation"] - strength * .3)
@@ -500,6 +516,9 @@ class Organism:
                 topics = {"poke": 4, "drag": 4, "git": 3, "activity": 3, "time": 5, "presence": 1, "context": 2}
                 affect = 9 if strength > .65 else 8 if novelty > .5 else 10
                 self._speak(topics.get(kind, 2), affect, now, 17 if novelty > .7 else 16)
+        if responds and typing_eligible:
+            self._gesture("imitate", now, strength=.2 + .3 * strength, target_id=d["attention"])
+            d["ethology"]["last_imitated_at"] = now
         devices = {item["id"]: item for item in d["devices"]}
         previous_seen = devices.get(event["device_id"], {}).get("last_seen", observed_at)
         devices[event["device_id"]] = {"id": event["device_id"], "last_seen": max(previous_seen, observed_at)}

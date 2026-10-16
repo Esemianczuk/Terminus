@@ -574,7 +574,7 @@ function drawField(milliseconds) {
       const weight = clamp(edge.weight);
       const scaffold = edge.origin === 'scaffold';
       context.beginPath();context.moveTo(ax,ay);context.quadraticCurveTo(cx,cy,bx,by);
-      context.strokeStyle = `rgba(125,165,149,${(scaffold ? .085 : .12)+weight*.18+activation*.12})`;
+      context.strokeStyle = `rgba(125,165,149,${(scaffold ? .14 : .20)+weight*.22+activation*.16})`;
       context.lineWidth = (scaffold ? .45 : .6)+weight*.65;context.stroke();
       if (activation > .08) {
         const progress = reducedMotion || !connected ? .5 : (seconds*(.035+activation*.055)+(hash(edge.source)%101)/101)%1;
@@ -587,7 +587,7 @@ function drawField(milliseconds) {
     if (attention) {
       const x = clamp(attention.x)*width,y=clamp(attention.y)*height;
       const p = state.position;
-      context.beginPath();context.moveTo(p.x*width,p.y*height);context.quadraticCurveTo((p.x*width+x)/2,(p.y*height+y)/2-25,x,y);context.setLineDash([2,8]);context.strokeStyle=`rgba(154,187,158,${.05+clamp(attention.activation)*.1})`;context.lineWidth=.6;context.stroke();context.setLineDash([]);
+      context.beginPath();context.moveTo(p.x*width,p.y*height);context.quadraticCurveTo((p.x*width+x)/2,(p.y*height+y)/2-25,x,y);context.setLineDash([2,8]);context.strokeStyle=`rgba(154,187,158,${.09+clamp(attention.activation)*.15})`;context.lineWidth=.6;context.stroke();context.setLineDash([]);
     }
     // Tendril poses reflect the current latent state and actual attention target.
     const curiosity = clamp(state.latent?.curiosity), agitation = clamp(state.latent?.agitation);
