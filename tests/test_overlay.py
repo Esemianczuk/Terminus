@@ -429,8 +429,45 @@ class OverlayTests(unittest.TestCase):
 
         painter = SingleFramePainter()
         widget.draw_body(painter, landed_at)
+        self.assertEqual(painter.images, [widget.skin.result])
+        self.assertTrue(widget.skin.mask_valid)
+        widget.skin.mode = "off"
+        painter.images.clear()
+        widget.draw_body(painter, landed_at)
         self.assertEqual(painter.images, [widget.clip_sample.image])
         self.assertAlmostEqual(abs(painter.transform.m11()), 1., places=6)
+
+    def test_living_skin_changes_only_the_body_and_persists_its_controls(self):
+        import numpy as np
+        from desktop.skin import rgba
+        with tempfile.TemporaryDirectory() as directory:
+            widget = self.widget(Path(directory))
+            widget.receive_state(self.snapshot())
+            widget.reduced_motion = True
+            widget.status_until = 0
+            now = widget.last_seen
+            widget.skin.mode = "off"
+            widget.last_mask = 0
+            widget.render_frame(now)
+            original = rgba(widget.frame)
+            original_region = widget.input_region
+            widget.skin.mode = "crimson"
+            widget.last_mask = 0
+            widget.render_frame(now)
+            colored = rgba(widget.frame)
+            # Alpha and input shape must survive the color layer unchanged.
+            np.testing.assert_array_equal(original[:,:,3], colored[:,:,3])
+            self.assertEqual(widget.input_region, original_region)
+            rect = widget.creature_rect.adjusted(-2,-2,2,2)
+            changed = np.any(original != colored,axis=2)
+            ys,xs = np.where(changed)
+            self.assertGreater(len(xs),100)
+            self.assertTrue(all(rect.contains(float(x),float(y)) for x,y in zip(xs,ys)))
+            widget.set_skin_mode("camouflage")
+            self.assertEqual(widget.preferences.value("skin_mode"), "camouflage")
+            self.assertEqual(widget.diagnostics()["skin"]["registered_clips"],12)
+            restored = self.widget(Path(directory))
+            self.assertEqual(restored.skin.mode, "camouflage")
 
     def test_missing_or_unreadable_gif_bank_falls_back_to_an_intact_png(self):
         widget = self.widget()

@@ -23,7 +23,7 @@ uv run python scripts/desktopctl.py status
 uv run python scripts/desktopctl.py stop
 ```
 
-Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart.
+Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart. **Living skin** adds procedural shimmer, travelling color cascades, cuttlefish camouflage and a deep crimson display over the existing GIFs, with protected eyes. Automatic blends them with rest, attention, movement and touch; manual styles and Off are available. [How the skin works](docs/LIVING_SKIN.md).
 
 The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
 
@@ -88,6 +88,7 @@ Tests cover controlled online prediction learning, habituation, graph updates, e
 - [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
 - [Directional flight, window awareness and typing](docs/DESKTOP_AWARENESS.md)
 - [GIF loops, transitions and local frame authoring](docs/GIF_ANIMATION.md)
+- [Procedural living skin and protected eyes](docs/LIVING_SKIN.md)
 - [Art sources, exact prompts and local diffusion workflow](docs/ART.md)
 - [Verification record](docs/VERIFICATION.md)
 

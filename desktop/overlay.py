@@ -18,6 +18,11 @@ import uuid
 
 from PyQt5 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 
+try:
+    from desktop.skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
+except ModuleNotFoundError:
+    from skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANVAS_WIDTH = 440
@@ -287,6 +292,7 @@ class Overlay(QtWidgets.QWidget):
         self.pose_art = {}
         self.art_cache = {}
         self.clip_library = self.clip_player = self.clip_sample = None
+        self.skin = SkinEngine(mode=self.preferences.value("skin_mode", "automatic"))
         self.clip_error = None
         self.clip_pixmap = QtGui.QPixmap()
         self.clip_pixmap_key = None
@@ -392,6 +398,7 @@ class Overlay(QtWidgets.QWidget):
         sleep_path = self.assets / "terminus-sleep.png"
         optional = {kind: self.assets / ("terminus-" + kind + ".png") for kind in ("stretch", "yawn", "flight", "typing")}
         manifest = self.assets / "clips" / "manifest.json"
+        skin_atlas = manifest.parent / "skin-atlas.json"
         def fingerprint(path):
             try:
                 information = path.stat()
@@ -401,7 +408,7 @@ class Overlay(QtWidgets.QWidget):
         signature = ((str(art), art.stat().st_mtime_ns) if art else None,
                      sleep_path.stat().st_mtime_ns if sleep_path.is_file() else None,
                      tuple((kind, path.stat().st_mtime_ns if path.is_file() else None)
-                           for kind, path in optional.items()), fingerprint(manifest),
+                           for kind, path in optional.items()), fingerprint(manifest), fingerprint(skin_atlas),
                      tuple(fingerprint(path) for path in sorted(manifest.parent.glob("*.gif"))[:32]))
         if signature == self.art_signature:
             return
@@ -424,6 +431,8 @@ class Overlay(QtWidgets.QWidget):
         elif art:
             self.static_art.load(str(art))
         self.clip_library = self.clip_player = self.clip_sample = None
+        self.skin.clear()
+        self.skin.atlas = SkinAtlas()
         self.clip_error = None
         self.clip_pixmap = QtGui.QPixmap()
         self.clip_pixmap_key = None
@@ -435,6 +444,7 @@ class Overlay(QtWidgets.QWidget):
                     from animation import ClipLibrary, ClipPlayer
                 self.clip_library = ClipLibrary.from_manifest(manifest)
                 self.clip_player = ClipPlayer(self.clip_library)
+                self.skin.atlas = SkinAtlas.load(skin_atlas, self.clip_library)
                 self.prepare_clip(time.monotonic())
             except (ImportError, OSError, ValueError, RuntimeError) as error:
                 self.clip_error = type(error).__name__
@@ -980,7 +990,15 @@ class Overlay(QtWidgets.QWidget):
         if self.clip_sample is not None and not self.clip_sample.image.isNull():
             # The decoded frame owns the silhouette and expression. Never
             # crossfade it with another pose or warp it through a texture mesh.
-            painter.drawImage(self.creature_rect, self.clip_sample.image)
+            dragging = self.press_global is not None and self.dragged and self.drag_mode == "window"
+            self.skin.update(now, state=self.state, motion=max(self.flight_strength, .85 if dragging else 0.),
+                             touch_age=now-self.touch_started, gesture=(self.gesture(now) or {}).get("kind"),
+                             fresh=self.fresh(now), reduced_motion=self.reduced_motion)
+            # Keep the source resolution here: Qt must perform exactly the
+            # same final sampling as the unshaded GIF, including its alpha
+            # silhouette, eye detail and the desktop's input shape.
+            image = self.skin.shade(self.clip_sample)
+            painter.drawImage(self.creature_rect, image)
         else:
             art = self.artwork()
             if not self.sleep_art.isNull() and pose["blink"] >= .5:
@@ -1000,8 +1018,7 @@ class Overlay(QtWidgets.QWidget):
         transform = QtGui.QTransform()
         transform.translate(pivot.x(), pivot.y())
         if self.clip_sample is not None:
-            # Turns are authored GIF footage. Flip only when its player says
-            # so; a second x-scale would collapse the already-turning frame.
+            # Body, protected eyes and skin turn together in one instant.
             transform.rotate(max(-16., min(16., self.flight_bank)))
             transform.scale(-1. if self.clip_sample.mirror else 1., 1.)
         else:
@@ -1141,6 +1158,8 @@ class Overlay(QtWidgets.QWidget):
         interval = self.presentation_interval(now)
         if self.clip_sample is not None and not self.reduced_motion and self.fresh(now):
             interval = min(interval, max(20, min(250, int(self.clip_sample.next_frame_ms))))
+            if self.skin.mode != "off" and self.skin.atlas.frames:
+                interval = min(interval, 167 if (self.state or {}).get("behavior") in {"sleep", "dream"} else 66)
         return interval
 
     def presentation_interval(self, now):
@@ -1481,6 +1500,7 @@ class Overlay(QtWidgets.QWidget):
         self.preferences.setValue("desktop_awareness", self.awareness_enabled)
         self.preferences.setValue("graph_visibility", self.graph_visibility)
         self.preferences.setValue("facing", self.facing_mode)
+        self.preferences.setValue("skin_mode", self.skin.mode)
         self.preferences.setValue("x", self.x())
         self.preferences.setValue("y", self.y())
         self.preferences.setValue("monitor", self.home_screen.name() if self.home_screen else "")
@@ -1543,6 +1563,15 @@ class Overlay(QtWidgets.QWidget):
         self.render_frame(time.monotonic())
         self.update()
 
+    def set_skin_mode(self, mode):
+        if mode not in SKIN_MODES:
+            return
+        self.skin.mode = mode
+        self.skin.result_key = None
+        self.save_view_preferences()
+        self.render_frame(time.monotonic())
+        self.update()
+
     def make_menu(self):
         menu = QtWidgets.QMenu(self)
         menu.addAction("&Open habitat", lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.client.url)))
@@ -1572,6 +1601,12 @@ class Overlay(QtWidgets.QWidget):
             action.setCheckable(True)
             action.setChecked(self.graph_visibility == mode)
             menu.aboutToShow.connect(lambda item=action, value=mode: item.setChecked(self.graph_visibility == value))
+        skin = menu.addMenu("&Living skin")
+        for mode in SKIN_MODES:
+            action = skin.addAction(mode.capitalize(), lambda checked=False, value=mode: self.set_skin_mode(value))
+            action.setCheckable(True)
+            action.setChecked(self.skin.mode == mode)
+            menu.aboutToShow.connect(lambda item=action, value=mode: item.setChecked(self.skin.mode == value))
         sizes = menu.addMenu("&Size")
         for label, scale in (("Small", .8), ("Companion", 1.), ("Large", 1.3), ("Extra large", 1.6)):
             action = sizes.addAction(label, lambda checked=False, value=scale: self.change_scale(value))
@@ -1647,6 +1682,7 @@ class Overlay(QtWidgets.QWidget):
         if self.movie:
             self.movie.stop()
         self.clip_player = self.clip_library = self.clip_sample = None
+        self.skin.clear()
         super().closeEvent(event)
 
     def diagnostics(self):
@@ -1678,6 +1714,7 @@ class Overlay(QtWidgets.QWidget):
                                    "load_error": self.clip_error,
                                    "clip_errors": len(getattr(self.clip_library, "errors", ()))},
                 "graph_visibility": self.graph_visibility, "graph_gain": self.graph_gain,
+                "skin": self.skin.diagnostics(),
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
                                       "source": self.awareness.get("source", "unavailable"), "caret_source": self.awareness.get("caret_source", "window-fallback")},
                 "frame_interval_ms": self.animation.interval(), "render_ms": round(self.render_ms, 2),
