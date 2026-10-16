@@ -1,10 +1,10 @@
 # Terminus
 
-A sleepy, cheeky little cuttlefish organism living on a graph. One local core, many windows into the same life.
+A sleepy, cheeky little cuttlefish who lives on your desktop, sprawled across an ephemeral graph. He floats above your applications, breathes, reaches into his network and sometimes leaves an inscription. One local core, many views into the same life.
 
 Terminus learns patterns of events, gets used to repetition, shifts his attention and occasionally leaves inscriptions in a fictional ancient-looking language. He is not a task assistant, chatbot or progression game. His graph is part of his associative memory, not a decorative network animation.
 
-![Live Terminus habitat](docs/screenshots/desktop.jpg)
+![Native desktop companion, shown on a neutral background](docs/screenshots/native-presence.png)
 
 ## Run
 
@@ -13,12 +13,19 @@ Python 3.10+; no GPU or cloud account required. With [uv](https://docs.astral.sh
 ```sh
 cd /home/eric/DocumentsFAST/Terminus
 uv sync --extra test --extra desktop
-uv run python -m terminus serve
+uv run python scripts/desktopctl.py start
 ```
 
-For a managed background process, use `uv run python scripts/termctl.py start` instead of the foreground serve command. `status` and `stop` affect only the process started by this checkout.
+Terminus appears as a native transparent, frameless, always-on-top companion. The graph travels with him; its branches fade, bloom and carry pulses while his tendrils rest on and reach toward them. He gently drifts when awake and settles when resting. Empty transparent space is click-through. Hover or right-click for controls; there is no permanent panel behind him.
 
-Open **http://127.0.0.1:8769**. Pair using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal and paste the value into the pairing form. Pairing uses an HttpOnly cookie; the browser does not store the token in localStorage or the URL.
+```sh
+uv run python scripts/desktopctl.py status
+uv run python scripts/desktopctl.py stop
+```
+
+Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, size and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him.
+
+The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
 
 Without uv, create a virtual environment and install `python -m pip install -e '.[test,desktop]'`, then replace `uv run python` with that environment's `python`.
 
@@ -28,13 +35,13 @@ The core creates `.local/organism.sqlite3`, a private pairing token and a single
 
 Click/tap the creature to poke him. Drag him to another part of the graph. Open the observatory to introduce an explicit context, inspect recent events or opt into learning diagnostics. A reaction may be subtle or delayed. Glyphs have internal semantic structure but the habitat does not translate them.
 
-The native transparent desktop body uses the same core:
+To run the same native body in the foreground for development:
 
 ```sh
 uv run python desktop/overlay.py
 ```
 
-Ordinary dragging moves the window; Alt-drag moves Terminus in his shared graph; right-click opens the habitat or quits. The desktop shell is PyQt5 and depends on a working graphical session. See [desktop/README.md](desktop/README.md) for limitations and a noninteractive smoke test.
+The native body and web observatory share the same organism, rather than simulating separate pets. The desktop shell is PyQt5 and depends on a working graphical session. See [desktop/README.md](desktop/README.md) for limitations and a noninteractive smoke test.
 
 ## Give him an environment
 

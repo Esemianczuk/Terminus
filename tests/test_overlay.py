@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 
@@ -19,6 +20,28 @@ SPEC.loader.exec_module(OVERLAY)
 
 
 class OverlayTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        cls.app = OVERLAY.QtWidgets.QApplication.instance() or OVERLAY.QtWidgets.QApplication([])
+
+    def widget(self):
+        client = OVERLAY.CoreClient("http://127.0.0.1:8769", Path("/unused-test-data"))
+        widget = OVERLAY.Overlay(client, ROOT / "web" / "assets")
+        self.addCleanup(widget.close)
+        return widget
+
+    @staticmethod
+    def snapshot():
+        return {"revision": 8, "behavior": "inspect", "position": {"x": .5, "y": .62},
+                "attention": "work", "nodes": [
+                    {"id": "touch", "x": .06, "y": .65, "activation": .2},
+                    {"id": "time", "x": .12, "y": .22, "activation": .02},
+                    {"id": "self", "x": .45, "y": .7, "activation": .1},
+                    {"id": "work", "x": .94, "y": .3, "activation": .8}],
+                "edges": [{"source": "self", "target": "work", "weight": .8},
+                          {"source": "self", "target": "touch", "weight": .3}]}
+
     def test_destinations_require_explicit_remote_url_and_refuse_url_secrets(self):
         self.assertEqual(OVERLAY.validate_url("http://127.0.0.1:8769/", explicit=False), "http://127.0.0.1:8769")
         self.assertEqual(OVERLAY.validate_url("https://example.invalid", explicit=True), "https://example.invalid")
@@ -65,9 +88,11 @@ class OverlayTests(unittest.TestCase):
             send(Event.MouseButtonRelease, origin)
             self.assertNotEqual(widget.pos(), before)
             self.assertEqual(events, [])
+            target = widget.graph_point(.9, .85).toPoint()
+            target = (target.x(), target.y())
             send(Event.MouseButtonPress, origin, Qt.AltModifier)
-            send(Event.MouseMove, (260, 210), Qt.AltModifier)
-            send(Event.MouseButtonRelease, (260, 210), Qt.AltModifier)
+            send(Event.MouseMove, target, Qt.AltModifier)
+            send(Event.MouseButtonRelease, target, Qt.AltModifier)
             self.assertEqual(len(events), 1)
             self.assertEqual(events[0][0], "drag")
             self.assertGreater(events[0][1]["x"], 0.8)
@@ -81,6 +106,92 @@ class OverlayTests(unittest.TestCase):
             widget.close()
             widget.deleteLater()
             app.processEvents()
+
+    def test_transparent_desktop_corners_and_visible_graph_share_input_shape(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        now = time.monotonic() + 10
+        widget.status_until = 0
+        widget.render_frame(now)
+        Qt = OVERLAY.QtCore.Qt
+        self.assertTrue(widget.windowFlags() & Qt.WindowDoesNotAcceptFocus)
+        self.assertTrue(widget.windowFlags() & Qt.WindowStaysOnTopHint)
+        self.assertTrue(widget.testAttribute(Qt.WA_TranslucentBackground))
+        for point in [(0, 0), (439, 0), (0, 339), (439, 339), (220, 322)]:
+            with self.subTest(point=point):
+                self.assertFalse(widget.input_region.contains(OVERLAY.QtCore.QPoint(*point)))
+                self.assertEqual(OVERLAY.QtGui.qAlpha(widget.frame.pixel(*point)), 0)
+        body = widget.creature_rect.center().toPoint()
+        self.assertTrue(widget.input_region.contains(body))
+        target = widget.graph_point(.94, .3).toPoint()
+        self.assertTrue(widget.input_region.contains(target))
+        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(target)), 30)
+        # A contacted memory node has a shaded, graspable surface. An untouched
+        # node keeps its faint point and glow rather than becoming a platform.
+        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(target + OVERLAY.QtCore.QPoint(5, 0))), 120)
+        untouched = widget.graph_point(.12, .22).toPoint()
+        self.assertLess(OVERLAY.QtGui.qAlpha(widget.frame.pixel(untouched + OVERLAY.QtCore.QPoint(5, 0))), 80)
+        widget.hovering = True
+        widget.render_frame(now + 1)
+        self.assertGreater(OVERLAY.QtGui.qAlpha(widget.frame.pixel(220, 322)), 150)
+        widget.hovering = False
+        widget.render_frame(now + 2)
+        self.assertEqual(OVERLAY.QtGui.qAlpha(widget.frame.pixel(220, 322)), 0)
+
+    def test_visual_roaming_is_bounded_and_pauses_for_user_or_resting_core(self):
+        widget = self.widget()
+        state = self.snapshot()
+        widget.receive_state(state)
+        widget.move(500, 500)
+        widget.roam_position = OVERLAY.QtCore.QPointF(widget.pos())
+        widget.interaction_until = widget.next_departure = 0
+        widget.hovering = False
+        area = OVERLAY.QtCore.QRect(0, 36, 1920, 1044)
+        before = widget.pos()
+        for step in range(1800):
+            widget.advance_motion(100 + step / 10, .1, area)
+            self.assertTrue(area.contains(widget.geometry()))
+        self.assertNotEqual(widget.pos(), before)
+        self.assertEqual(state, self.snapshot())
+        for condition in ("hovering", "menu_open", "roaming_paused"):
+            setattr(widget, condition, True)
+            before = widget.pos()
+            widget.advance_motion(1000, .2, area)
+            self.assertEqual(widget.pos(), before)
+            setattr(widget, condition, False)
+        for behavior in ("sleep", "dream", "attend", "startled", "settle"):
+            state["behavior"] = behavior
+            before = widget.pos()
+            widget.advance_motion(1000, .2, area)
+            self.assertEqual(widget.pos(), before)
+        state["behavior"] = "inspect"
+        widget.connected = False
+        before = widget.pos()
+        widget.advance_motion(1000, .2, area)
+        self.assertEqual(widget.pos(), before)
+
+    def test_reaching_graph_and_signs_follow_authoritative_attention_and_utterance(self):
+        widget = self.widget()
+        state = self.snapshot()
+        widget.receive_state(state)
+        now = time.monotonic()
+        _, points = widget.scene_geometry(now)
+        tendrils = widget.tendril_geometry(points, now)
+        self.assertGreater(points["work"].x() - points["touch"].x(), 280)
+        self.assertIn("work", [key for key, _, _ in tendrils])
+        for key, path, activity in tendrils:
+            self.assertEqual(path.pointAtPercent(1), points[key])
+            self.assertGreater(path.length(), 10)
+        self.assertEqual(widget.glyph_sequence, [])
+        state["utterance"] = {"id": "u-new", "created_at": time.time(), "glyphs": [4, 11]}
+        widget.receive_state(state)
+        self.assertEqual(widget.glyph_sequence, [4, 11])
+        started = widget.glyph_started
+        widget.receive_state(state)
+        self.assertEqual(widget.glyph_started, started)
+        state["utterance"] = {"id": "u-historic", "created_at": time.time() - 500, "glyphs": [4, 11]}
+        widget.receive_state(state)
+        self.assertEqual(widget.glyph_sequence, [])
 
     def _smoke(self, *, redirect=False):
         calls = []

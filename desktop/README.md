@@ -1,32 +1,44 @@
-# Terminus desktop overlay
+# Terminus, present on the desktop
 
-This small, translucent, always-on-top window displays the organism and graph from the running Terminus core. The core owns behavior, memory, learning, position, and symbols. The overlay polls authenticated snapshots once per second and sends explicit interactions; it runs no organism model. Breathing and GIF playback are presentation animation only.
+The native companion is a translucent, frameless, always-on-top PyQt5 window. It stays present independently of the browser. Its body and ephemeral graph appear directly over your applications, with no permanent panel, floor or status bar.
 
-From the repository root, start the core, then run:
-
-```sh
-/usr/bin/python3 desktop/overlay.py --url http://127.0.0.1:8769 --data-dir .local
-```
-
-Use a Python interpreter with PyQt5 and QtNetwork installed. On this machine `/usr/bin/python3` provides PyQt5. The core creates `.local/token`; the overlay reads it without displaying it. It does not create a second core or token. Missing tokens and failed connections show a disconnected indicator, dim the last received state, and disable interactions until reconnection.
-
-- Click the creature to poke it.
-- Drag the window to place it on your desktop. A normal window drag does not move the organism.
-- Hold **Alt** while dragging to choose a graph position; release to send the position to the core. The target marker is only a preview. Some Linux window managers reserve Alt-drag for moving windows; adjust their shortcut if needed.
-- Right-click for **Open full habitat**, window repositioning, connection detail, or **Quit overlay**. Opening the habitat uses its ordinary URL; pair in the browser if necessary. The token never appears in a browser URL.
-- Add `--scale 0.8` for a smaller window, or another multiplier between 0.65 and 2.
-
-The default footprint is 320 × 282 logical pixels. The overlay prefers `web/assets/terminus-refined.png`, then `terminus.png`, then `idle.gif`, and notices newly available artwork every five seconds. When `terminus-sleep.png` is present, it smoothly blends the matching closed-eye pose during shared sleep/dream states. If `terminus-sleep.png` is available, it smoothly blends to the closed-eye image when the core reports sleep or dream, using the same image rectangle and breathing transform. Without it, the ordinary artwork remains visible. It never changes these files. Transparent image padding is included in the displayed bounds.
-
-An explicitly supplied `--url` may connect to a remote core. Requests carry the local bearer token, so use the intended server and HTTPS when crossing a network. Automatic redirects are refused. Without `--url`, the only destination is `127.0.0.1:8769`.
-
-## Verification
+From the repository root:
 
 ```sh
-/usr/bin/python3 desktop/overlay.py --url http://127.0.0.1:8769 --data-dir .local --smoke-test
-/usr/bin/python3 -m unittest discover -s tests -p test_overlay.py -v
+uv sync --extra test --extra desktop
+uv run python scripts/desktopctl.py start
+uv run python scripts/desktopctl.py status
+uv run python scripts/desktopctl.py stop
 ```
 
-The smoke test forces Qt's offscreen platform, fetches a real authenticated snapshot, renders a frame, and exits. It sends no interactions. Failure to authenticate, connect, load the artwork, or render exits nonzero. A successful offscreen check confirms the network and drawing paths; it does not verify visible desktop integration.
+The launcher starts the local core only if needed, then detaches the native body so it stays running after the terminal closes. It verifies a real exposed desktop window connected to the core before reporting success. Starting again reuses the same resident process. Stop/restart validates PID, process start time, boot identity, ownership, exact script and checkout; it never stops the organism core. `--scale 1.2` selects a larger starting size.
 
-X11 supports the requested frameless/translucent/always-on-top behavior. Wayland compositors may limit programmatic positioning and always-on-top hints; behavior depends on the compositor. If Qt's Wayland backend is unavailable, `QT_QPA_PLATFORM=xcb` can use an existing XWayland display. The overlay does not install desktop autostart entries or launch itself persistently.
+A real graphical session and PyQt5 are required. On the current X11 desktop the launcher explicitly selects Qt's `xcb` backend, rather than inheriting a test's offscreen setting. Wayland behavior depends on compositor support for always-on-top windows and positioning.
+
+## Presence and interaction
+
+- The graph uses actual core nodes, edges, activation and attention. Branches softly emerge, pulse and fade; some remain faint under him as a resting surface.
+- Procedural tendrils extend from the bitmap body toward the attention region and active nodes, curling over the graph. They express shared state; they are not an independent organism model.
+- Awake and closed-eye bitmaps blend during sleep/dream transitions. Breathing, appendage motion and light are visual interpolation.
+- He makes slow, bounded excursions while awake, settles while resting, and pauses roaming while hovered, dragged, or using a menu. You can pause roaming explicitly.
+- Click the creature to poke. Drag to move the whole presence. Alt-drag changes his position within the shared graph. Some window managers reserve Alt-drag; their modifier shortcut may take precedence.
+- Right-click the body or use the tray icon for roaming, size, position, observatory and quit controls.
+- Empty transparent regions are click-through. The input shape follows the rendered body, visible graph and tendrils. Status appears only on hover, briefly after changes, or when disconnected.
+
+The default canvas is 440×340 logical pixels, most of it transparent. The visible creature occupies roughly 190–200 pixels and carries its network with it. A per-data-directory lock prevents duplicate native bodies; smoke tests do not acquire the resident lock.
+
+The web habitat at `http://127.0.0.1:8769` remains available as an observatory and phone view. Quitting a browser does not remove the desktop body. Quitting the body does not erase learning.
+
+## Runtime evidence
+
+`.local/desktop-status.json` records the native process, exposed/visible state, X11 platform, window flags, bounds, core revision, graph/tendril counts and roaming state. `.local/desktop-presence.png` is a capture of the companion's own window after it is exposed and connected; it does not capture the surrounding desktop or other applications. Logs and runtime files are ignored by Git.
+
+For foreground development or an offscreen check:
+
+```sh
+uv run python desktop/overlay.py
+uv run python desktop/overlay.py --smoke-test
+uv run python -m pytest -q tests/test_overlay.py tests/test_desktopctl.py
+```
+
+The offscreen check tests network and rendering paths; it is distinct from the resident launcher's verification of an exposed desktop window. Assets are watched for updates; the refined body and matching sleep pose are preferred, with original GIF fallback. Bearer authentication remains local and redirects cannot forward its token. No login autostart is installed automatically.

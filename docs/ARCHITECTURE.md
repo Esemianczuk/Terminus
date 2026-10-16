@@ -38,7 +38,7 @@ The web client retains a last snapshot for an explicitly labelled disconnected v
 
 ## Rendering
 
-The full habitat renders actual graph nodes and edges. Activation controls pulses; attention and shared state control posture, colour, tendrils and sparse glyphs. The body is an alpha image with procedural visual motion; supplied animated GIFs remain available as source references. A PyQt5 transparent window supplies a lightweight desktop body. Native window dragging is distinct from moving Terminus within his shared graph.
+The full habitat renders actual graph nodes and edges. Activation controls pulses; attention and shared state control posture, colour, tendrils and sparse glyphs. The body is an alpha image with procedural visual motion; supplied animated GIFs remain available as source references. A resident PyQt5 transparent window is the primary desktop body. It carries an ephemeral projection of actual graph edges and nodes, with tapered limbs that touch selected attention/activation nodes, sparse glyphs, and no permanent panel. A shaped native input region lets empty space pass clicks through. Bounded slow window roaming is presentation motion; it does not train a second model or emit synthetic activity. Native window dragging is distinct from moving Terminus within his shared graph. `scripts/desktopctl.py` detaches and supervises only this checkout's native body, starts the core if needed, and checks exposed/connected native presence before claiming success.
 
 ## Next extensions
 

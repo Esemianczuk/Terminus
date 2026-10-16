@@ -16,13 +16,15 @@ RECORD = DATA / 'managed-core.json'
 
 
 def owned_process(record):
+    if not isinstance(record, dict):
+        return False
     try:
         pid = int(record['pid'])
         stat = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
         command = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
         cwd = Path(f'/proc/{pid}/cwd').resolve()
         return stat[19] == record['start_ticks'] and cwd == ROOT and b'terminus' in command and b'serve' in command
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
         return False
 
 

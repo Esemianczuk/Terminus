@@ -5,7 +5,7 @@
 ## Automated checks
 
 - `uv sync --extra test --extra desktop` completed in an isolated `.venv`; `uv.lock` records exact dependencies. Runtime used CPython 3.13.14. The project supports Python 3.10+.
-- `uv run python -m pytest -q`: 28 passed, including 5 native overlay subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
+- `uv run python -m pytest -q`: 42 passed, including 10 native overlay subtests. Core cases cover learning beyond event frequency, habituation, zero-intensity silence, ignored presence, quiet sleep cycles, real scaffold activation, exact restored RNG/model continuity, bounded state, one-writer locking, atomic failure rollback and authenticated concurrent WebSockets.
 - `node --test tests/*.test.mjs`: 6 passed. Actual client code runs in an inert DOM harness; covers cached offline/auth-unknown queuing, confirmed 401 blocking, same-ID replay without internal metadata, isolation from stale client outboxes, bounds/expiry and service-worker access boundaries, plus graceful loading of aligned sleep artwork.
 - `node --check web/app.js` and `node --check web/service-worker.js` passed with bundled modern Node.
 - `uv run python scripts/evaluate.py --output docs/evaluation.json` records an isolated synthetic experiment. After 600 balanced work/break events (599 gradient updates), frozen next-event inference is 100% accurate on 120 additional alternating events; cold model accuracy is 0.83%. This is temporal continuation of the same simple pattern, not held-out worlds, general understanding or proof of long-term intrigue. Evaluation never accesses the live organism.
@@ -32,7 +32,13 @@ Captured live browser screenshots: [desktop habitat](screenshots/desktop.jpg), [
 
 ## Native body and collectors
 
-The PyQt5 overlay fetched authenticated state from the running core, loaded the final body and rendered a 320×282 offscreen frame. Tests exercised click poke, native window movement, Alt graph dragging, disconnected interactions and bearer-token redirect refusal. This validates drawing/network/input paths; visible always-on-top integration on the user's desktop was not inspected. No persistent GUI overlay or desktop autostart was installed.
+The initial native check was offscreen only. The desktop-presence revision was subsequently launched as a resident native application on the real X11/Budgie session using Qt `xcb`. Its own heartbeat confirmed `visible=true`, `exposed=true`, `translucent=true`, `topmost=true`, `frameless=true`, `accepts_focus=false` and `connected=true`. The 440×340 window appeared at the lower right of the 5120×1352 available screen. It rendered the same organism ID as the core, with 29 actual graph nodes, 38 edges and three touching tendrils at the time of verification.
+
+The desktop body stays running independently of the browser or launching terminal. Starting it twice reused the same process. Stop/restart affected only the owned native process; the original organism core remained running with the same identity and continuing revision. No login autostart was installed.
+
+Eight native tests cover click/native drag/graph drag separation, transparent input shape, real node/tendril contacts, sparse utterances, bounded roaming, hover/menu/rest/pause behavior and authentication/redirect boundaries. Eleven launcher tests reject unrelated processes and stale/malformed presence heartbeats, check exposed native connection requirements, and verify that changed process ownership cannot receive a stop signal.
+
+The resident captures its own widget after exposure and connection. [Native companion preview](screenshots/native-presence.png) shows that capture composited onto a neutral background; [transparent capture](screenshots/native-transparent.png) preserves the original alpha. This capture does not include other applications or the surrounding desktop. Neutral-background previews are rendering checks rather than full-desktop screenshots. Inactive transparent corners and the former permanent status area are outside its input region, so they pass clicks to applications underneath.
 
 The metadata collector's `--once` mode delivered real time/presence events and emptied its outbox. Tests cover private file permissions, expiry, 256-event retention, deduplication/replay and refusal to send a token over remote plain HTTP. Continuous app-focus or project monitoring was not enabled.
 
@@ -40,4 +46,4 @@ No existing GPU workload was stopped or reused. Kestrel and CocoIndex services r
 
 ## Current scope
 
-The core, authenticated multi-client protocol, responsive cached phone habitat, transparent native shell, learning/association policy and metadata collector are implemented. The refined body has smooth procedural visual motion and alternate rest art; it does not yet have a fully segmented skeletal rig. Remote HTTPS/tunnel configuration, physical phone installation, native phone telemetry, widgets and live wallpaper remain deployment/platform work. No claim of biological cognition, semantic screen understanding or long-term emergent personality is made.
+The core, authenticated multi-client protocol, responsive cached phone habitat, resident transparent native companion, learning/association policy and metadata collector are implemented. The refined body has smooth procedural visual motion and alternate rest art; it does not yet have a fully segmented skeletal rig. Remote HTTPS/tunnel configuration, physical phone installation, native phone telemetry, widgets and live wallpaper remain deployment/platform work. No claim of biological cognition, semantic screen understanding or long-term emergent personality is made.
