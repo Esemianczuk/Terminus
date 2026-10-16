@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -115,7 +116,7 @@ class OverlayTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory(prefix="terminus-overlay-test-") as directory:
                 (Path(directory) / "token").write_text("test-only-local-token\n")
-                result = subprocess.run(["/usr/bin/python3", str(ROOT / "desktop" / "overlay.py"),
+                result = subprocess.run([sys.executable, str(ROOT / "desktop" / "overlay.py"),
                                          "--url", f"http://127.0.0.1:{server.server_port}",
                                          "--data-dir", directory, "--smoke-test"],
                                         capture_output=True, text=True, timeout=10)

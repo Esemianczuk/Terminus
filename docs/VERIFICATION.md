@@ -11,6 +11,8 @@
 - `uv run python scripts/evaluate.py --output docs/evaluation.json` records an isolated synthetic experiment. After 600 balanced work/break events (599 gradient updates), frozen next-event inference is 100% accurate on 120 additional alternating events; cold model accuracy is 0.83%. This is temporal continuation of the same simple pattern, not held-out worlds, general understanding or proof of long-term intrigue. Evaluation never accesses the live organism.
 - The seed 814 quiet simulation spends 86.6% of 1,000 seconds in sleep/dream. This is a bounded seeded simulation result, not a measurement of a month of real usage.
 
+The first GitHub CI run caught a test harness launching the system Python instead of the locked environment for native subprocess checks. The harness now uses `sys.executable`, so subprocesses use the same dependency environment as the test runner.
+
 The installed FastAPI TestClient emits an upstream Starlette/httpx deprecation warning. It did not fail the checks.
 
 ## Live browser evidence
