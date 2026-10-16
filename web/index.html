@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101c21">
+  <meta name="description" content="A small, persistent presence. One creature, shared across your windows and devices.">
+  <title>Terminus — One presence</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Terminus home"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v10M20 25v10M5 20h10M25 20h10M9.4 9.4l7 7M23.6 23.6l7 7M30.6 9.4l-7 7M16.4 23.6l-7 7"/><circle cx="20" cy="20" r="4"/></svg><span>TERMINUS<small>One presence. Many windows.</small></span></a>
+      <div class="toolbar">
+        <div class="connection" id="connection" role="status"><i></i><span>Connecting</span></div>
+        <span class="device-count" id="device-count" title="Devices seen recently">— devices</span>
+        <button class="icon-button" id="observatory-button" aria-label="Open observatory" aria-expanded="false" aria-controls="observatory"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-35 12 12)"/><path d="M7 4.5c3.7-1.7 8.3.6 10.5 5.2s1 9.4-2.7 11.1"/></svg></button>
+        <button class="icon-button" id="settings-button" aria-label="Open settings" aria-expanded="false" aria-controls="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
+      </div>
+    </header>
+
+    <main class="habitat" id="habitat" aria-label="Terminus habitat">
+      <div class="habitat-wash" aria-hidden="true"></div>
+      <div class="coordinate coordinate-top" aria-hidden="true">PERSISTENT FIELD <span>01</span></div>
+      <div class="coordinate coordinate-left" aria-hidden="true">AN OPEN-ENDED LITTLE LIFE</div>
+      <canvas id="field" aria-hidden="true"></canvas>
+      <div class="orbit orbit-one" aria-hidden="true"></div><div class="orbit orbit-two" aria-hidden="true"></div>
+      <div id="nodes" class="nodes" aria-label="Context nodes"></div>
+      <div class="field-center" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <div class="creature" id="creature" tabindex="0" role="button" aria-label="Poke Terminus. Drag to move within the habitat." aria-describedby="interaction-hint">
+        <div class="creature-glow"></div>
+        <div class="creature-shadow"></div>
+        <svg class="tendrils" viewBox="0 0 300 280" aria-hidden="true"><path id="tendril-left" d="M112 162 C65 170 79 211 39 212"/><path id="tendril-right" d="M190 166 C229 162 217 213 260 207"/><path class="tendril-fine" id="tendril-upper" d="M172 91 C213 56 223 88 246 61"/></svg>
+        <div class="creature-body" id="creature-body"><img id="sprite" src="/assets/idle.gif" alt="Terminus, a small teal and burgundy creature" draggable="false"><img id="sleep-sprite" class="sleep-sprite" alt="" aria-hidden="true" draggable="false"></div>
+        <div class="creature-ground" aria-hidden="true"><i></i><i></i><i></i></div>
+      </div>
+      <div class="utterance" id="utterance" aria-live="polite"></div>
+      <div class="field-note" id="field-note"><i></i><span>Opening a window into the habitat</span></div>
+      <section class="presence-card" aria-labelledby="presence-title">
+        <div class="eyebrow"><i></i> HERE, WITH YOU</div>
+        <h1 id="presence-title">A little presence.<br>A world of its own.</h1>
+        <p id="presence-copy">A shared habitat, shaped by the rhythm of your day.</p>
+        <div class="presence-meta"><span class="behavior-dot"></span><span id="behavior-label">Waiting for the habitat</span><span class="meta-divider"></span><span id="context-count">— contexts</span></div>
+      </section>
+      <div class="habitat-legend"><span class="legend-line"></span><span>Connections grow through experience</span></div>
+      <div class="interaction-hint" id="interaction-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v3m0-1a2 2 0 014 0v5c0 4-3 6-7 6-2 0-4-1-6-3l-4-4c-2-2 0-4 2-3l3 2"/></svg><span>Say hello. Give him a gentle nudge.</span></div>
+    </main>
+
+    <footer class="bottombar"><div class="identity"><span class="identity-mark">◈</span><span id="organism-id">ONE CONTINUOUS LIFE</span></div><span id="sync-detail">Your windows share one state</span><button class="text-button" id="context-shortcut">Introduce a context <span>↗</span></button></footer>
+
+    <aside class="drawer" id="observatory" aria-labelledby="observatory-title" inert>
+      <div class="drawer-header"><div><div class="eyebrow">A CLOSER LOOK</div><h2 id="observatory-title">Observatory</h2></div><button class="icon-button" id="close-observatory" aria-label="Close observatory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="drawer-body">
+        <section class="context-section"><h3>Introduce a context</h3><p>A place, a project, a moment. Let it enter his world.</p><form id="context-form"><label class="sr-only" for="context-input">Context name</label><div class="context-input-wrap"><input id="context-input" maxlength="80" placeholder="A late night building something…" autocomplete="off" required><button aria-label="Introduce context" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div></form><p class="small-note" id="context-help">A real event, offered by you.</p></section>
+        <section class="activity-section"><div class="section-heading"><h3>Passing moments</h3><span id="event-count">0</span></div><ol class="event-list" id="event-list"><li class="empty-state">The habitat has yet to arrive.</li></ol></section>
+        <section class="inspector-section" id="inspector-section" hidden><div class="section-heading"><h3>Learning, in the open</h3><span class="tiny-pill">INSPECTOR</span></div><p class="small-note">Random initialization. Online updates from accepted events. No pre-trained personality.</p><div class="metric-grid" id="learning-metrics"></div><div class="latent-bars" id="latent-bars"></div><details><summary>State & provenance</summary><pre id="state-provenance"></pre></details></section>
+        <div class="drawer-footnote">No conversation to keep up with.<br>Just something that keeps being here.</div>
+      </div>
+    </aside>
+    <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+
+    <section class="settings" id="settings" aria-label="Habitat settings" hidden>
+      <div class="section-heading"><h3>Make room</h3><button class="icon-button" id="close-settings" aria-label="Close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <label class="setting"><span>Inspector<small>Actual learning and state</small></span><input type="checkbox" id="inspector-toggle"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting"><span>Less motion<small>A quieter habitat</small></span><input type="checkbox" id="motion-toggle"><span class="switch" aria-hidden="true"></span></label>
+      <p class="small-note">One server holds the organism. This window is a view into it.</p>
+      <p class="small-note" id="buffer-status">No waiting events.</p>
+    </section>
+
+    <section class="pairing" id="pairing" aria-labelledby="pairing-title" hidden>
+      <div class="pairing-card"><div class="pairing-mark" aria-hidden="true">◈</div><div class="eyebrow">A WINDOW INTO THE SAME WORLD</div><h2 id="pairing-title">Come a little closer.</h2><p>Enter the pairing token from your Terminus server to join this habitat.</p><form id="pairing-form"><label for="pairing-token">Pairing token</label><input id="pairing-token" type="password" autocomplete="off" spellcheck="false" required><button class="primary-button" type="submit" id="pairing-submit">Open the habitat <span>↗</span></button><div class="pairing-file"><label for="pairing-file">Or pair from your local token file</label><input id="pairing-file" type="file" aria-label="Pair from token file"></div><p id="pairing-error" role="alert"></p></form><p class="small-note">The token stays out of your URL. Your connection uses a private session cookie.</p></div>
+    </section>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+</body>
+</html>

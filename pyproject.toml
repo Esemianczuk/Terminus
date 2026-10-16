@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terminus-organism"
+version = "0.1.0"
+description = "A local, persistent little creature that learns the rhythm around it."
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "websockets>=13,<17", "numpy>=1.24,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1", "websockets>=13,<17"]
+test = ["pytest>=8,<10", "httpx>=0.27,<1"]
+desktop = ["PyQt5>=5.15,<6"]
+
+[project.scripts]
+terminus = "terminus.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["terminus*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

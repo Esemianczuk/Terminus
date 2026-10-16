@@ -1,0 +1,33 @@
+{
+  "scope": "Synthetic two-context temporal continuation; not held-out worlds or semantic understanding",
+  "model": "online-rnn-v1",
+  "initialization": "random",
+  "seed": 123,
+  "training_events": 600,
+  "gradient_updates": 599,
+  "cold_frozen": {
+    "accuracy": 0.008333333333333333,
+    "mean_cross_entropy": 4.051686997419653,
+    "events": 120,
+    "weight_updates": 0
+  },
+  "trained_frozen": {
+    "accuracy": 1.0,
+    "mean_cross_entropy": 0.0032598831256535504,
+    "events": 120,
+    "weight_updates": 0
+  },
+  "quiet_ecology": {
+    "seed": 814,
+    "seconds": 1000,
+    "behaviors": {
+      "sleep": 455,
+      "dream": 411,
+      "settle": 5,
+      "idle": 114,
+      "inspect": 15
+    },
+    "resting_fraction": 0.866
+  },
+  "live_state_accessed": false
+}
