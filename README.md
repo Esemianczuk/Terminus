@@ -1,104 +1,111 @@
 # Terminus
 
-A sleepy, cheeky little cuttlefish who lives on your desktop, sprawled across an ephemeral graph. He floats above your applications, breathes, reaches into his network and sometimes leaves an inscription. One local core, many views into the same life.
+A small cuttlefish who lives on your desktop and minds his own business. Mostly.
 
-Terminus learns patterns of events, gets used to repetition, shifts his attention and occasionally leaves inscriptions in a fictional ancient-looking language. He is not a task assistant, chatbot or progression game. His graph is part of his associative memory, not a decorative network animation.
+![Terminus resting, swimming and changing color on his memory graph](docs/screenshots/terminus.gif)
 
-![Native desktop companion, shown on a neutral background](docs/screenshots/native-presence.png)
+He naps on a glowing graph, reaches toward things that hold his attention, and sometimes wanders off to inspect a corner of the screen. Carry him around and he swims. His skin shifts through shimmer, moving bands of color, camouflage and a deep red display. He occasionally leaves a few signs in a made-up language.
 
-## Run
+There is a little learning behind it. Repeated events become familiar. A small recurrent model learns short event patterns, and connections in the graph influence where his attention goes. He keeps that history between runs. The animations give those changes a body.
 
-Python 3.10+; no GPU or cloud account required. With [uv](https://docs.astral.sh/uv/):
+## Install
+
+Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). No GPU, model download or cloud inference account is needed.
 
 ```sh
-cd /home/eric/DocumentsFAST/Terminus
-uv sync --extra test --extra desktop
-uv run python scripts/desktopctl.py start
+git clone https://github.com/Esemianczuk/Terminus.git
+cd Terminus
+uv run python scripts/setup.py
 ```
 
-Terminus appears as a native transparent, frameless, always-on-top companion. The graph travels with him; its branches fade, bloom and carry pulses while his tendrils rest on and reach toward them. He blinks, peers, stretches, yawns, curls and makes deliberate excursions along the monitor's edges. Touch and dragging have a soft springy response. Long naps include little gestures and occasional short surveys. Empty transparent space is click-through. Hover or right-click for controls; there is no permanent panel behind him.
+The installer builds a local environment, starts his core and desktop body, sets up login startup and recovery, and adds **Bring Back Terminus** to your desktop. On macOS it is an app with his picture. On Linux it is a desktop launcher.
+
+To try him before installing services:
 
 ```sh
-uv run python scripts/desktopctl.py status
-uv run python scripts/desktopctl.py stop
-```
-
-To restore him automatically after crashes and login, install the user services once:
-
-```sh
-uv run python scripts/servicectl.py install
-```
-
-The **Bring Back Terminus** desktop shortcut checks and restores him with one click. Both processes restart automatically, with watchdogs for frozen event loops and a quiet presence check about every 30 seconds. Existing launcher commands control the services after installation. [Startup, recovery, logs and intentional stopping](docs/SERVICE_RECOVERY.md).
-
-Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart. **Living skin** adds procedural shimmer, travelling color cascades, cuttlefish camouflage and a deep crimson display over the existing GIFs, with protected eyes. Automatic blends them with rest, attention, movement and touch; manual styles and Off are available. [How the skin works](docs/LIVING_SKIN.md).
-
-The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
-
-Without uv, create a virtual environment and install `python -m pip install -e '.[test,desktop]'`, then replace `uv run python` with that environment's `python`.
-
-The core creates `.local/organism.sqlite3`, a private pairing token and a single-writer lock. This directory contains your creature's history and learned state: keep it between runs and back it up while the core is stopped. It is excluded from Git. The initial organism has random model weights and an unobserved starting graph; it is not pretrained on your activity.
-
-## Interact
-
-Click/tap the creature to poke him. Drag him to another part of the graph. Open the observatory to introduce an explicit context, inspect recent events or opt into learning diagnostics. A reaction may be subtle or delayed. Glyphs have internal semantic structure but the habitat does not translate them.
-
-To run the same native body in the foreground for development:
-
-```sh
+uv sync --frozen --extra desktop
+# First terminal:
+uv run python -m terminus serve
+# Second terminal:
 uv run python desktop/overlay.py
 ```
 
-The native body and web observatory share the same organism, rather than simulating separate pets. The desktop shell is PyQt5 and depends on a working graphical session. See [desktop/README.md](desktop/README.md) for limitations and a noninteractive smoke test.
+The desktop needs a logged-in graphical session. macOS uses launch agents; Linux uses systemd user services. X11 has window-position awareness and occasional typing imitation. Those observers are not available on macOS or native Wayland yet. The creature, learning, animation and color effects work without them. Other devices can use the browser habitat.
 
-## Give him an environment
+## Living with him
 
-The desktop contributes coarse time and observations of its own visible habitat. On X11, **Notice windows and typing** also lets him look toward the active window or an available accessible text anchor, occasionally perch beside a window, and imitate typing with his tentacles. It reads window geometry and aggregate activity, never typed text, titles or screenshots. The menu toggle or `--no-awareness` disables these observations. See [desktop awareness boundaries](docs/DESKTOP_AWARENESS.md).
+Click to give him a nudge. Drag to carry him. Right-click for size, movement, facing and skin controls. Empty space around him lets clicks pass through to your other windows.
 
-The browser contributes presence and deliberate interactions while it is open. Habitat visibility does not mean its human is active. A separate opt-in metadata collector can run on a personal computer:
+**Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back or sign in again.
+
+The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. The moving lights express activity on those connections. Their exact timing is animation, not a literal trace of each calculation.
+
+His state lives in `.local/`, outside Git. Keep that folder. Updating the source does not give you a new creature.
+
+## Update a machine
+
+From its checkout:
 
 ```sh
-# Coarse time/presence only
-uv run python agents/collector.py
-
-# Explicit project edit/commit signals and X11 app-class transitions
-uv run python agents/collector.py --repo /path/to/a/repository --focus
-
-# Introduce one context without a GUI
-uv run python agents/collector.py --send 'mapping work'
+uv run python scripts/update.py
 ```
 
-The collector sends short labels and counts, never screen images, keystrokes, window titles, file contents or terminal command strings. `--focus` needs X11 and `xprop`; it is unavailable on native Wayland. Collector outboxes are bounded to 256 events / 24 hours; web action buffers have their own shorter bounds. Stable event IDs allow retries without teaching twice while retained in the core's dedup window.
+This backs up the local memory database, pulls GitHub with `--ff-only`, rebuilds dependencies and restores the services. It refuses to discard local source changes. Each computer can update independently.
 
-## Phone / another device
-
-Use the responsive web habitat from a reachable private **HTTPS** endpoint backed by this same core, then pair that browser with the same local token. Install/add to home screen where supported. The service worker caches the app and last view for an explicitly disconnected, read-only habitat; there is no second brain on the phone. Explicit actions may queue briefly for reconnect.
-
-The core defaults to loopback. An intentional private-network bind requires `--host <private-interface> --allow-network`; authentication remains required. Use a private HTTPS reverse proxy or an existing Tailscale HTTPS setup for remote clients. This repository does not open firewall ports, create public ingress or provision a tunnel. Secure-context install/offline features are browser-dependent. Native phone sensors, widgets, live wallpaper and system-wide overlays are future platform-specific work.
-
-## Verify
+For service status:
 
 ```sh
+uv run python scripts/servicectl.py status
+```
+
+[Startup, recovery and stopping](docs/SERVICE_RECOVERY.md)
+
+## A shared memory bank
+
+Each computer has its own creature, private model and history. There is also an optional public model that they can learn from together.
+
+That second model receives only seven fixed event categories: context, touch, movement, presence, project activity, keyboard activity and time. It never receives the context strings, typed characters, passwords, window titles, file contents, timestamps or event logs. Contributions contain small, clipped numerical changes to its 24-unit recurrent network.
+
+```sh
+# Pull the bank and learn locally, without uploading:
+uv run python scripts/collective.py enable
+uv run python scripts/collective.py sync
+
+# Allow publishing with a GitHub account that can write to this repo:
+uv run python scripts/collective.py enable --publish
+```
+
+Exchange runs about every ten minutes. A creature needs at least 32 category observations before it can export an update. GitHub serializes and validates bank updates. The resulting model supplies a small attention prior; it never replaces either creature's private memory or neural weights.
+
+Anyone can inspect the [bank](community/bank.json), run a learner, or submit a contribution in a pull request. Reading the bank needs no GitHub login. Publishing needs an authorized account or a reviewed pull request. An offline creature keeps learning and waits until it can reconnect.
+
+This format leaves out content by construction. It is not a formal differential-privacy guarantee, and broad activity patterns can influence the shared weights. [Format, contribution process and limits](docs/COLLECTIVE_MEMORY.md)
+
+## Browser habitat
+
+Open `http://127.0.0.1:8769` to see his wider graph, introduce a context or inspect learning. Pair with the local `.local/token` file when asked. The browser and desktop on one machine share that machine's core.
+
+The API defaults to loopback and requires authentication. Public collective learning does not expose the local API. Sharing one core with a remote browser is a separate, deliberate setup through a private HTTPS endpoint.
+
+## What he learns
+
+The private predictor begins with random weights and learns event sequences. Familiarity changes responses; associations shape attention; sleep replays retained experience. His temperament, motives, gestures and symbol grammar are designed behavior, with learning influencing their choices.
+
+He does not understand your screen or read what you type. He will not grow new abilities just by being left running. A controlled repeating-sequence test demonstrates basic prediction learning; longer-term character is something to watch develop.
+
+## Development
+
+```sh
+uv sync --frozen --extra test --extra desktop
 uv run python -m pytest -q
-uv run python desktop/overlay.py --smoke-test  # running core; offscreen automatically when requested
-node --check web/app.js
-node --check web/service-worker.js
-node --test tests/*.test.mjs
 uv run python scripts/evaluate.py
+node --test tests/*.test.mjs
 ```
 
-Tests cover controlled online prediction learning, habituation, graph updates, exact restart continuity, single-authority locking, event deduplication, auth/origin boundaries, concurrent WebSockets, bounded outboxes and native interaction/network boundaries. A learned repeating test sequence is evidence of predictor learnability; it is not evidence of semantic understanding or long-term creature intrigue.
+The GIF above is a controlled preview from the native renderer. Original art and animation sources are documented in [the art notes](docs/ART.md). Runtime memory, keys and local configuration stay out of the repository.
 
-## Build notes
+[Architecture](docs/ARCHITECTURE.md) · [Behavior](docs/ETHOLOGY.md) · [Skin effects](docs/LIVING_SKIN.md) · [Desktop awareness](docs/DESKTOP_AWARENESS.md)
 
-- [Concept and source chats](docs/CONCEPT.md)
-- [Architecture, current boundaries and next extensions](docs/ARCHITECTURE.md)
-- [Startup services and crash/freeze recovery](docs/SERVICE_RECOVERY.md)
-- [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
-- [Directional flight, window awareness and typing](docs/DESKTOP_AWARENESS.md)
-- [GIF loops, transitions and local frame authoring](docs/GIF_ANIMATION.md)
-- [Procedural living skin and protected eyes](docs/LIVING_SKIN.md)
-- [Art sources, exact prompts and local diffusion workflow](docs/ART.md)
-- [Verification record](docs/VERIFICATION.md)
+## License
 
-The supplied original GIFs and video remain intact in `web/assets/`; downloaded source files outside the project were left untouched. The body preserves Terminus's identity and cute, cheeky, androgynous, subtly masculine eyes. Native motion plays actual transparent GIF loops with short GIF transitions, while code-drawn tendrils connect the body to the live graph. Approved PNG poses remain the authoring sources and fallback art. [GIF authoring](docs/GIF_ANIMATION.md); [art and exact prompts](docs/ART_DIRECTIONAL.md).
+[MIT](LICENSE). The character artwork was generated and refined for this project; its source and prompts are retained with the art notes. Dependencies keep their own licenses, including PyQt5's GPL or commercial terms. Redistribution of a combined application must meet those terms too.

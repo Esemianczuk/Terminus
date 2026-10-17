@@ -14,6 +14,10 @@ class MacPresence:
         self.window.setLevel_(AppKit.NSFloatingWindowLevel)
         self.window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
                                           AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary)
+        # Cocoa can relocate a freshly shown tool window while its activation
+        # policy changes. Reapply the Qt placement after that transition.
+        position=widget.roam_position.toPoint() if widget.roam_position is not None else widget.pos()
+        QtCore.QTimer.singleShot(150,lambda:widget.move(position))
         self.timer=QtCore.QTimer(widget)
         self.timer.timeout.connect(self.update_hit_test)
         self.timer.start(40)

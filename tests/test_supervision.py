@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import tempfile
 import time
 
 import pytest
@@ -14,7 +15,10 @@ from scripts import servicectl as installer
 
 
 def test_watchdog_datagrams_are_from_main_process_and_sanitize_status(tmp_path,monkeypatch):
-    path=str(tmp_path/'notify.sock')
+    # macOS limits Unix socket paths to 104 bytes; pytest's normal temporary
+    # directory can exceed that before a filename is added.
+    directory=tempfile.TemporaryDirectory(prefix='term-',dir='/tmp')
+    path=str(Path(directory.name)/'notify.sock')
     with socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as listener:
         listener.bind(path);listener.settimeout(.1)
         monkeypatch.setenv('NOTIFY_SOCKET',path)
@@ -125,6 +129,7 @@ def test_service_status_rejects_stale_foreign_or_disconnected_body(tmp_path):
 
 
 def test_stop_is_an_intentional_unit_stop_without_direct_process_signals(tmp_path,monkeypatch):
+    monkeypatch.setattr(control.sys,'platform','linux')
     (tmp_path/'service-install.json').write_text(json.dumps({'version':1,'root':str(tmp_path.resolve())}))
     calls=[]
     def run(command,**kwargs):

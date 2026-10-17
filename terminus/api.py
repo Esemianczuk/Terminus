@@ -106,6 +106,7 @@ class Service:
         self.persistence_failures = 0
         self.log_after = {}
         self.ticker_task = None
+        self.next_collective_read = 0.
         self.lock = asyncio.Lock()
         self.clients = set()
         self.buckets = defaultdict(deque)
@@ -168,6 +169,24 @@ class Service:
         from .core import Organism
         async with self.lock:
             now = self.clock()
+            if now >= self.next_collective_read:
+                self.next_collective_read = now + 10
+                try:
+                    import json
+                    path = self.store.directory / "collective-prior.json"
+                    if path.stat().st_size > 4096:
+                        raise ValueError("Oversized collective prior")
+                    prior = json.loads(path.read_text())
+                    from .collective import KINDS
+                    probabilities = prior["probabilities"]
+                    if (prior.get("schema") != 1 or set(probabilities) != set(KINDS)
+                            or any(not isinstance(v,(int,float)) or isinstance(v,bool) or not math.isfinite(v)
+                                   or not 0 <= v <= 1 for v in probabilities.values())
+                            or not .99 <= sum(probabilities.values()) <= 1.01):
+                        raise ValueError("Invalid collective prior")
+                    self.store.organism.data["collective_prior"] = prior
+                except (OSError,ValueError,KeyError,TypeError,AttributeError):
+                    pass
             if now < max(self.store.organism.data["last_tick_at"], self.store.organism.data["server_time"]):
                 # The core refuses backward time. Publish that blocked state
                 # without claiming a successful tick or rewriting its history.

@@ -117,6 +117,8 @@ def shortcut(root):
 
 def install(root):
     root=Path(root).resolve();data=root/'.local';data.mkdir(exist_ok=True,mode=0o700)
+    if call('print',domain(),check=False).returncode:
+        raise ValueError('Sign into the macOS desktop before installing its launch agents.')
     for role in ('core','desktop','presence'):
         path=paths(role)
         if path.exists() and plistlib.loads(path.read_bytes()).get('WorkingDirectory')!=str(root):
@@ -137,20 +139,33 @@ def install(root):
 
 
 def guardian(root):
-    from .supervision import is_paused,desktop_status
+    from .supervision import is_paused,desktop_status,health
     root=Path(root);data=root/'.local'
     if is_paused('core',data):return
+    failure_path=data/'macos-health.json'
+    try:failures=json.loads(failure_path.read_text())
+    except (OSError,ValueError):failures={}
     for role in ('core','desktop'):
         if is_paused(role,data):continue
         p=properties(role)
         if p.get('WorkingDirectory')!=str(root):continue
         pid=int(p.get('MainPID') or 0)
         if not pid:start(role);continue
+        if role=='core':
+            count=failures.get('core_failures',0) if failures.get('core_pid')==pid else 0
+            count=0 if health() else count+1
+            failures={'core_pid':pid,'core_failures':count}
+            if count>=2:
+                call('kickstart','-k',domain()+'/'+LABELS[role]);failures['core_failures']=0
         if role=='desktop':
             # A stalled native event loop stops writing this heartbeat.
-            try:age=time.time()-json.loads((data/'desktop-status.json').read_text())['updated_at']
+            try:
+                view=json.loads((data/'desktop-status.json').read_text())
+                age=time.time()-view['updated_at'] if view.get('pid')==pid else 0
             except (OSError,ValueError,KeyError):age=0
             if age>50:call('kickstart','-k',domain()+'/'+LABELS[role])
+    from .collective import write_private
+    write_private(failure_path,failures)
 
 
 def bring_back(root):

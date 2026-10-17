@@ -4,7 +4,13 @@ permissions:
   contents: read
 jobs:
   core:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -13,6 +19,7 @@ jobs:
       - run: python -m pip install uv
       - run: uv sync --frozen --python 3.11 --extra test --extra desktop
       - run: uv run --frozen python -m pytest -q
+      - run: uv run --frozen python scripts/collective_bank.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

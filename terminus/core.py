@@ -307,6 +307,10 @@ class Organism:
             score = (.02 + node["activation"] + associations.get(node["id"], 0.) * .6
                      + prediction * .8 + (self._novelty(node, now) * .08 if node["seen"] else 0.)
                      + node["familiarity"] * .04 - recent * .08)
+            # The public model sees event categories only. Its small prior
+            # supplements local attention without replacing private weights.
+            shared = self.data.get("collective_prior", {}).get("probabilities", {})
+            score += .10 * shared.get(node.get("last_kind", node["id"]), 0.)
             scored.append((node, max(.005, score)))
         return scored
 
@@ -438,6 +442,7 @@ class Organism:
         node["novelty"] = 1 / math.sqrt(1 + node["seen"])
         node["last_seen"] = observed_at if node["seen"] == 1 else max(node["last_seen"], observed_at)
         node["last_bucket"] = token
+        node["last_kind"] = kind
         if current:
             node["activation"] = clamp(node["activation"] * .55 + strength)
         base = self._node(kind)
