@@ -731,7 +731,10 @@ def _worker_main(own_pid):
         while observer.thread and observer.thread.is_alive() and not observer.stop_event.wait(.2):
             if permission_request.is_set():
                 permission_request.clear()
-                from desktop.macos_permission import request_input_monitoring
+                try:
+                    from desktop.macos_permission import request_input_monitoring
+                except ModuleNotFoundError:
+                    from macos_permission import request_input_monitoring
                 request_input_monitoring()
             sys.stdout.write(json.dumps(observer.snapshot(), separators=(",", ":"), allow_nan=False) + "\n")
             sys.stdout.flush()
