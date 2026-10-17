@@ -1,13 +1,37 @@
 """Cocoa window behavior for the native body. No screen or keyboard capture."""
 import ctypes
+import os
 from PySide6 import QtCore,QtGui
+
+
+def prepare_macos_environment():
+    """Keep Qt's launch delegate from activating this background creature.
+
+    Qt 6.10.3's qcocoaapplicationdelegate.mm::applicationDidFinishLaunching
+    explicitly activates the process, including all windows on Sonoma+, unless
+    this flag is set. Window nonfocus flags do not prevent app-level activation.
+    This affects only the current process and must run before QApplication.
+    """
+    os.environ["QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM"]="1"
+
+
+def configure_macos_application():
+    """Set the accessory policy before constructing any presence windows."""
+    import AppKit
+    application=AppKit.NSApplication.sharedApplication()
+    application.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+    if application.activationPolicy()!=AppKit.NSApplicationActivationPolicyAccessory:
+        raise RuntimeError("Could not configure Terminus as a background accessory")
+    return application
 
 
 class MacPresence:
     def __init__(self,widget):
         import AppKit,objc
         self.widget=widget
-        AppKit.NSApplication.sharedApplication().setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+        application=AppKit.NSApplication.sharedApplication()
+        if application.activationPolicy()!=AppKit.NSApplicationActivationPolicyAccessory:
+            configure_macos_application()
         view=objc.objc_object(c_void_p=ctypes.c_void_p(int(widget.winId())))
         self.window=view.window()
         # Configure the tool panel before its first show. Mouse interaction

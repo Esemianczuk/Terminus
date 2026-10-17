@@ -31,7 +31,11 @@ def main():
     parser.add_argument("--screenshot",type=Path)
     parser.add_argument("--clip",default="idle")
     args=parser.parse_args()
+    if sys.platform=='darwin':
+        from desktop.macos import prepare_macos_environment,configure_macos_application
+        prepare_macos_environment()
     app=QtWidgets.QApplication([])
+    if sys.platform=='darwin':configure_macos_application()
     parent=QtWidgets.QWidget(None,QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.FramelessWindowHint |
                              QtCore.Qt.WindowType.WindowDoesNotAcceptFocus | QtCore.Qt.WindowType.WindowTransparentForInput)
     parent.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)

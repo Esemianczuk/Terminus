@@ -67,7 +67,8 @@ def test_typing_aggregate_is_bounded_transient_and_contains_no_key_identities():
 def test_disabled_and_unsupported_modes_never_open_input_connection(enabled, environment, reason):
     def forbidden(*args):
         pytest.fail("Disabled/unsupported observation must not open an input connection")
-    observer = awareness.DesktopAwareness(enabled=enabled, environment=environment, backend_factory=forbidden).start()
+    observer = awareness.DesktopAwareness(enabled=enabled, environment=environment,
+                                         platform="linux", backend_factory=forbidden).start()
     assert not observer.snapshot()["available"]
     assert observer.snapshot()["reason"] == reason
     assert observer.close()

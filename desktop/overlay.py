@@ -1950,7 +1950,12 @@ def main(argv=None):
         parser.error("--scale must be between 0.65 and 2")
     if args.smoke_test:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if sys.platform=="darwin" and not args.smoke_test:
+        from desktop.macos import prepare_macos_environment,configure_macos_application
+        prepare_macos_environment()
     app = QtWidgets.QApplication([sys.argv[0]])
+    if sys.platform=="darwin" and not args.smoke_test:
+        configure_macos_application()
     app.setApplicationName("Terminus desktop")
     app.setQuitOnLastWindowClosed(True)
     lock = None
@@ -1963,6 +1968,11 @@ def main(argv=None):
             return 1
     client = CoreClient(url, args.data_dir.resolve())
     overlay = Overlay(client, REPO_ROOT / "web" / "assets", args.scale)
+    mac_presence = None
+    if sys.platform == "darwin" and not args.smoke_test:
+        from desktop.macos import MacPresence
+        mac_presence = MacPresence(overlay)
+        overlay.mac_presence = mac_presence
     render_guard=None
     if args.renderer!="raster" and not args.smoke_test:
         from desktop.render_guard import RenderGuard
@@ -1977,14 +1987,6 @@ def main(argv=None):
         overlay.reduced_motion = True
     if args.no_awareness:
         overlay.awareness_enabled = False
-    mac_presence = None
-    if sys.platform == "darwin" and not args.smoke_test:
-        try:
-            from desktop.macos import MacPresence
-        except ModuleNotFoundError:
-            from macos import MacPresence
-        mac_presence = MacPresence(overlay)
-        overlay.mac_presence = mac_presence
     overlay.show()
     if app.platformName()=="xcb" and overlay.gpu_scene is not None:
         from desktop.x11_input import OwnWindowInputShape

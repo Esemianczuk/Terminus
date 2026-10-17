@@ -15,7 +15,11 @@ from desktop.overlay import CoreClient,Overlay
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output',type=Path,default=ROOT/'docs/screenshots/terminus.gif')
 args=parser.parse_args()
+if sys.platform=='darwin':
+    from desktop.macos import prepare_macos_environment,configure_macos_application
+    prepare_macos_environment()
 app=QtWidgets.QApplication([])
+if sys.platform=='darwin':configure_macos_application()
 with tempfile.TemporaryDirectory(prefix='terminus-readme-') as directory:
     widget=Overlay(CoreClient('http://127.0.0.1:1',Path(directory)),ROOT/'web/assets',1.25)
     for timer in (widget.animation,widget.asset_timer,widget.presence_timer,widget.awareness_timer):timer.stop()
@@ -27,12 +31,12 @@ with tempfile.TemporaryDirectory(prefix='terminus-readme-') as directory:
     widget.state=creature.state();widget.state.update(behavior='idle',gesture=None)
     widget.connected=True;widget.roaming_paused=True;widget.status_until=0;widget.glyph_sequence=[]
     widget.awareness_enabled=False
-    if not widget.enable_gpu():raise SystemExit('GPU preview unavailable: '+str(widget.gpu_error))
     widget.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
     widget.setWindowFlag(QtCore.Qt.WindowTransparentForInput,True)
     if sys.platform=='darwin':
         from desktop.macos import MacPresence
         widget.mac_presence=MacPresence(widget)
+    if not widget.enable_gpu():raise SystemExit('GPU preview unavailable: '+str(widget.gpu_error))
     widget.show()
     request={'desired':'idle','facing':1,'fresh':True}
     widget.prepare_clip=lambda now:setattr(widget,'clip_sample',widget.clip_player.advance(now,**request))
