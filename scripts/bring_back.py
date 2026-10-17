@@ -85,6 +85,11 @@ def bring_back():
 
 def notification(message, *, failure=False):
     try:
+        if sys.platform == 'darwin':
+            import json
+            script='display notification '+json.dumps(message)+' with title \"Terminus\"'
+            subprocess.run(['osascript','-e',script],timeout=5,check=False)
+            return
         subprocess.run(['notify-send','--app-name=Terminus','--icon='+str(ROOT/'web/assets/terminus-refined.png'),
                         '--urgency='+('normal' if failure else 'low'),'Terminus',message],timeout=5,check=False)
     except (OSError,subprocess.SubprocessError):

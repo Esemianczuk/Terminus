@@ -169,11 +169,19 @@ def guardian(root):
 
 
 def bring_back(root):
-    from .supervision import set_paused
-    data=Path(root)/'.local'
+    from .supervision import set_paused,health,desktop_ready,desktop_status
+    root=Path(root);data=root/'.local'
     for role in ('core','desktop'):
+        if properties(role).get('WorkingDirectory')!=str(root):
+            raise ValueError('Recovery agent belongs to another checkout.')
         set_paused(role,data,False);start(role)
     start('presence')
+    # A deliberate shortcut click can recover a frozen component immediately.
+    # The periodic guardian waits for repeated failures instead.
+    if not health():call('kickstart','-k',domain()+'/'+LABELS['core'])
+    pid=int(properties('desktop').get('MainPID') or 0)
+    if not desktop_ready(desktop_status(data,pid)):
+        call('kickstart','-k',domain()+'/'+LABELS['desktop'])
     return action('desktop','start',root,data)
 
 
