@@ -308,6 +308,20 @@ def test_macos_adapter_never_uses_event_taps_accessibility_or_audio():
     assert "CGEventSourceSecondsSinceLastEventType" in source
 
 
+def test_mac_permission_request_only_signals_a_live_ready_observer(monkeypatch):
+    from types import SimpleNamespace
+    sent = []
+    monkeypatch.setattr(awareness.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    observer = awareness.DesktopAwareness(platform="darwin")
+    observer.process = SimpleNamespace(pid=71, poll=lambda: None)
+    assert not observer.request_input_monitoring()
+    observer.current["source"] = "mac-readonly"
+    assert observer.request_input_monitoring()
+    assert sent == [(71, awareness.signal.SIGUSR1)]
+    observer.process = SimpleNamespace(pid=71, poll=lambda: 1)
+    assert not observer.request_input_monitoring()
+
+
 def test_microphone_status_is_only_bounded_stream_metadata_and_never_recording(monkeypatch):
     import subprocess
     import sys

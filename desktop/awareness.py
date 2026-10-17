@@ -22,6 +22,7 @@ import math
 import os
 from pathlib import Path
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -686,6 +687,18 @@ class DesktopAwareness:
             return self._empty("observer_stale", "unsupported")
         return value
 
+    def request_input_monitoring(self):
+        """Forward one explicit user request to the Mac observer process."""
+        process = self.process
+        if (self.platform != "darwin" or process is None or process.poll() is not None
+                or self.snapshot().get("source") != "mac-readonly"):
+            return False
+        try:
+            os.kill(process.pid, signal.SIGUSR1)
+        except OSError:
+            return False
+        return True
+
     def close(self, timeout=1.0):
         self.stop_event.set()
         if self.thread is not None:
@@ -708,11 +721,18 @@ def _worker_main(own_pid):
     except OSError:
         pass
     observer = DesktopAwareness(own_pid=own_pid, _worker=True)
+    permission_request = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: observer.stop_event.set())
     signal.signal(signal.SIGINT, lambda *_: observer.stop_event.set())
+    if sys.platform == "darwin":
+        signal.signal(signal.SIGUSR1, lambda *_: permission_request.set())
     observer.start()
     try:
         while observer.thread and observer.thread.is_alive() and not observer.stop_event.wait(.2):
+            if permission_request.is_set():
+                permission_request.clear()
+                from desktop.macos_permission import request_input_monitoring
+                request_input_monitoring()
             sys.stdout.write(json.dumps(observer.snapshot(), separators=(",", ":"), allow_nan=False) + "\n")
             sys.stdout.flush()
     except (BrokenPipeError, OSError):

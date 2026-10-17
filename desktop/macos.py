@@ -2,6 +2,7 @@
 import ctypes
 import os
 from PySide6 import QtCore,QtGui
+from desktop.macos_permission import request_input_monitoring
 
 
 def prepare_macos_environment():
@@ -23,25 +24,6 @@ def configure_macos_application():
     if application.activationPolicy()!=AppKit.NSApplicationActivationPolicyAccessory:
         raise RuntimeError("Could not configure Terminus as a background accessory")
     return application
-
-
-def request_input_monitoring():
-    """Ask macOS for the running desktop process's Input Monitoring access.
-
-    This is called only after an explicit user action. The observer keeps
-    preflighting permission and never opens an event tap or reads key details.
-    """
-    try:
-        framework = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-        request = framework.CGRequestListenEventAccess
-        request.argtypes = []
-        request.restype = ctypes.c_bool
-        granted = bool(request())
-    except (OSError, AttributeError) as exc:
-        print(f"Terminus Input Monitoring request unavailable: {exc}", flush=True)
-        return False
-    print(f"Terminus Input Monitoring request returned granted={granted}", flush=True)
-    return granted
 
 
 class MacPresence:

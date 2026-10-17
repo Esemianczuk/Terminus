@@ -1802,6 +1802,14 @@ class Overlay(QtWidgets.QWidget):
         self.render_frame(time.monotonic())
         self.update()
 
+    def request_mac_input_monitoring(self):
+        """Ask for permission in both the visible body and its observer child."""
+        from desktop.macos_permission import request_input_monitoring
+        granted = request_input_monitoring()
+        observer = self.awareness_provider
+        sent = bool(observer and observer.request_input_monitoring())
+        print(f"Terminus Input Monitoring request: desktop_granted={granted} observer_requested={sent}", flush=True)
+
     def make_menu(self):
         menu = QtWidgets.QMenu(self)
         menu.addAction("&Open habitat", lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.client.url)))
@@ -1826,8 +1834,7 @@ class Overlay(QtWidgets.QWidget):
         observe.triggered.connect(self.toggle_awareness)
         menu.aboutToShow.connect(lambda: observe.setChecked(self.awareness_enabled))
         if sys.platform == "darwin":
-            from desktop.macos import request_input_monitoring
-            menu.addAction("Allow typing awareness...", lambda checked=False: request_input_monitoring())
+            menu.addAction("Allow typing awareness...", lambda checked=False: self.request_mac_input_monitoring())
         graph = menu.addMenu("Memory &graph")
         for label, mode in (("Subtle", "subtle"), ("Clear", "clear"), ("Bright", "bright")):
             action = graph.addAction(label, lambda checked=False, value=mode: self.set_graph_visibility(value))
@@ -2059,8 +2066,7 @@ def main(argv=None):
     def process_permission_request():
         if permission_request["pending"]:
             permission_request["pending"] = False
-            from desktop.macos import request_input_monitoring
-            request_input_monitoring()
+            overlay.request_mac_input_monitoring()
 
     signal_pump = QtCore.QTimer(app)
     signal_pump.timeout.connect(process_permission_request)
