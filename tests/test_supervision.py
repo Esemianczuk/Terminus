@@ -62,6 +62,8 @@ def test_session_bridge_saves_only_graphical_metadata_privately(tmp_path):
 
 
 def test_wayland_gate_requires_an_actual_session_socket(tmp_path):
+    directory=tempfile.TemporaryDirectory(prefix='term-',dir='/tmp')
+    tmp_path=Path(directory.name)
     environment={'XDG_SESSION_TYPE':'wayland','XDG_RUNTIME_DIR':str(tmp_path),'WAYLAND_DISPLAY':'wayland-test'}
     assert not session.display_available(environment)
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as listener:

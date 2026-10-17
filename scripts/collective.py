@@ -26,7 +26,10 @@ def bank(data,offline=False):
     cache=data/'collective-bank.json'
     if not offline:
         try:
-            with urllib.request.urlopen(URL,timeout=8) as response:
+            # A new round should not be hidden by a stale CDN response. This
+            # runs only at the configured exchange interval, not per event.
+            request=urllib.request.Request(URL+'?exchange='+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
+            with urllib.request.urlopen(request,timeout=8) as response:
                 raw=response.read(512*1024+1)
             if len(raw)>512*1024:raise ValueError('Oversized bank')
             value=validate_bank(json.loads(raw));write_private(cache,value)
