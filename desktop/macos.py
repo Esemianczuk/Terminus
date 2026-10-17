@@ -25,6 +25,25 @@ def configure_macos_application():
     return application
 
 
+def request_input_monitoring():
+    """Ask macOS for the running desktop process's Input Monitoring access.
+
+    This is called only after an explicit user action. The observer keeps
+    preflighting permission and never opens an event tap or reads key details.
+    """
+    try:
+        framework = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        request = framework.CGRequestListenEventAccess
+        request.argtypes = []
+        request.restype = ctypes.c_bool
+        granted = bool(request())
+    except (OSError, AttributeError) as exc:
+        print(f"Terminus Input Monitoring request unavailable: {exc}", flush=True)
+        return False
+    print(f"Terminus Input Monitoring request returned granted={granted}", flush=True)
+    return granted
+
+
 class MacPresence:
     def __init__(self,widget):
         import AppKit,objc

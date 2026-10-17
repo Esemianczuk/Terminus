@@ -1825,6 +1825,9 @@ class Overlay(QtWidgets.QWidget):
         observe.setEnabled(self.awareness_supported())
         observe.triggered.connect(self.toggle_awareness)
         menu.aboutToShow.connect(lambda: observe.setChecked(self.awareness_enabled))
+        if sys.platform == "darwin":
+            from desktop.macos import request_input_monitoring
+            menu.addAction("Allow typing awareness...", lambda checked=False: request_input_monitoring())
         graph = menu.addMenu("Memory &graph")
         for label, mode in (("Subtle", "subtle"), ("Clear", "clear"), ("Bright", "bright")):
             action = graph.addAction(label, lambda checked=False, value=mode: self.set_graph_visibility(value))
@@ -2049,8 +2052,18 @@ def main(argv=None):
     # A short Qt timer gives Python a regular opportunity to receive SIGTERM.
     signal.signal(signal.SIGTERM, lambda signum, frame: app.quit())
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())
+    permission_request = {"pending": False}
+    if sys.platform == "darwin" and not args.smoke_test:
+        signal.signal(signal.SIGUSR1, lambda signum, frame: permission_request.__setitem__("pending", True))
+
+    def process_permission_request():
+        if permission_request["pending"]:
+            permission_request["pending"] = False
+            from desktop.macos import request_input_monitoring
+            request_input_monitoring()
+
     signal_pump = QtCore.QTimer(app)
-    signal_pump.timeout.connect(lambda: None)
+    signal_pump.timeout.connect(process_permission_request)
     signal_pump.start(250)
     captured = {"since": None, "done": False}
 

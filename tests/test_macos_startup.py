@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from desktop.macos import prepare_macos_environment,configure_macos_application
+from desktop.macos import prepare_macos_environment,configure_macos_application,request_input_monitoring
 
 class MacStartupTests(unittest.TestCase):
     def test_foreground_transform_is_disabled_in_this_process_only(self):
@@ -29,6 +29,14 @@ class MacStartupTests(unittest.TestCase):
         kit=SimpleNamespace(NSApplication=SimpleNamespace(sharedApplication=lambda:application),NSApplicationActivationPolicyAccessory=1)
         with patch.dict(sys.modules,{'AppKit':kit}),self.assertRaisesRegex(RuntimeError,'background accessory'):
             configure_macos_application()
+
+    def test_explicit_input_monitoring_request_uses_coregraphics(self):
+        calls=[]
+        def request():calls.append(True);return True
+        with patch('desktop.macos.ctypes.CDLL',return_value=SimpleNamespace(CGRequestListenEventAccess=request)) as load:
+            self.assertTrue(request_input_monitoring())
+        self.assertEqual(calls,[True])
+        load.assert_called_once_with('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
 
 
 if __name__=='__main__':unittest.main()
