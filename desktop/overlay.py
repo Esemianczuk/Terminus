@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:sys.path.insert(0,str(REPO_ROOT))
 from PySide6 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 from terminus.supervision import notify,set_paused
+from desktop.graph_motion import GraphMotion
 
 try:
     from desktop.skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
@@ -134,6 +135,18 @@ def amount(value: Any, default: float = 0.0) -> float:
 def smoothstep(start: float, end: float, value: float) -> float:
     t = amount((value - start) / (end - start))
     return t * t * (3 - 2 * t)
+
+
+def reach_envelope(progress: float) -> float:
+    """A slow outward reach, a real hold, then a longer soft return."""
+    progress = amount(progress)
+    if progress < .30:
+        t = progress / .30
+    elif progress <= .55:
+        return 1.
+    else:
+        t = (1 - progress) / .45
+    return t * t * t * (t * (t * 6 - 15) + 10)
 
 
 class CoreClient(QtCore.QObject):
@@ -309,6 +322,7 @@ class Overlay(QtWidgets.QWidget):
         self.graph_cache_key = None
         self.graph_points = {}
         self.graph_paths = []
+        self.graph_motion = GraphMotion()
         self.sleep_blend = 0.0
         self.body_offset = QtCore.QPointF()
         self.body_velocity = QtCore.QPointF()
@@ -533,7 +547,8 @@ class Overlay(QtWidgets.QWidget):
         kind = gesture.get("kind") if gesture else None
         progress = gesture["progress"] if gesture else 0.
         strength = gesture["strength"] if gesture else 0.
-        envelope = math.sin(math.pi * progress) ** 2 * (.45 + strength * .55)
+        envelope = (reach_envelope(progress) if kind in {"peer", "tendril-inspect", "signal", "stretch"}
+                    else math.sin(math.pi * progress) ** 2) * (.45 + strength * .55)
         reduced = 0. if self.reduced_motion else 1.
         state = self.state or {}
         target_id = gesture.get("target_id") if gesture else state.get("attention")
@@ -808,8 +823,8 @@ class Overlay(QtWidgets.QWidget):
 
     def scene_geometry(self, now):
         state = self.state or {}
-        position = state.get("position", {"x": 0.5, "y": 0.62})
-        anchor = self.graph_point(position["x"], position["y"])
+        self.cache_graph(state, now)
+        anchor = self.graph_point(*self.graph_motion.anchor)
         anchor.setX(max(120, min(320, anchor.x())))
         anchor.setY(max(236, min(278, anchor.y())))
         breath = 0 if self.reduced_motion or self.clip_sample is not None else math.sin((now - self.started) * (1.0 if self.sleep_blend > .5 else 1.6))
@@ -825,17 +840,18 @@ class Overlay(QtWidgets.QWidget):
         width *= 1 + resting * .07
         self.creature_rect = QtCore.QRectF(anchor.x() - width / 2 + self.body_offset.x(),
                                          anchor.y() - height + 10 + self.body_offset.y() - self.flight_strength * 9, width, height)
-        self.cache_graph(state)
         return anchor, self.graph_points
 
-    def cache_graph(self, state):
-        key = (tuple((node["id"], node["x"], node["y"]) for node in state.get("nodes", [])),
+    def cache_graph(self, state, now=None):
+        now=time.monotonic() if now is None else now
+        self.graph_motion.sample(state,now,frozen=not self.fresh(now),reduced_motion=self.reduced_motion)
+        positions=self.graph_motion.points
+        key = (tuple((node_id,*point) for node_id,point in positions.items()),
                tuple((edge["source"], edge["target"]) for edge in state.get("edges", [])))
         if key == self.graph_cache_key:
             return
         self.graph_cache_key = key
-        self.graph_points = {node["id"]: self.graph_point(node["x"], node["y"])
-                             for node in state.get("nodes", [])}
+        self.graph_points = {node_id:self.graph_point(*point) for node_id,point in positions.items()}
         self.graph_paths = []
         for index, edge in enumerate(state.get("edges", [])):
             a, b = edge["source"], edge["target"]
@@ -854,16 +870,38 @@ class Overlay(QtWidgets.QWidget):
             return []
         nodes = {n["id"]: n for n in self.state["nodes"]}
         attention = self.state.get("attention")
+        gesture = self.gesture(now)
+        if (gesture and gesture.get("kind") in {"peer", "tendril-inspect", "signal", "stretch"}
+                and gesture.get("target_id") in points and gesture.get("target_id") in nodes):
+            # Keep the finite gesture's actual target while it reaches and
+            # releases, even if another node briefly wins global attention.
+            attention = gesture["target_id"]
         center = self.creature_rect.center()
         ranked = sorted(nodes, key=lambda key: (key == attention, amount(nodes[key].get("activation"))), reverse=True)
         selected = []
         if attention in points:
             selected.append(attention)
+        # Supporting contacts linger through small activation-rank crossings.
+        # This is local presentation state, never a new learned association.
+        contact_clock = now if self.fresh(now) else self.last_live_frame
+        contacts = getattr(self, "tendril_contacts", {})
         # Flanking connections provide a real memory hammock even at rest.
         for side in (-1, 1):
             candidates = [key for key in ranked if key not in selected and (points[key].x() - center.x()) * side >= 8]
             if candidates:
-                selected.append(candidates[0])
+                choice = candidates[0]
+                previous = contacts.get(side)
+                if previous and previous["id"] in candidates:
+                    old = previous["id"]
+                    if (contact_clock < previous["until"]
+                            or amount(nodes[choice].get("activation")) < amount(nodes[old].get("activation")) + .18):
+                        choice = old
+                if not previous or previous["id"] != choice:
+                    contacts[side] = {"id": choice, "until": contact_clock + 1.5}
+                selected.append(choice)
+            else:
+                contacts.pop(side, None)
+        self.tendril_contacts = contacts
         if not selected:
             selected = ranked[:1]
         rect = self.creature_rect
@@ -1119,8 +1157,11 @@ class Overlay(QtWidgets.QWidget):
                          fresh=self.fresh(now),reduced_motion=self.reduced_motion)
         state=self.state or {};by_id={n["id"]:n for n in state.get("nodes",[])}
         contacts={key for key,_,_ in gestures};attention=state.get("attention")
-        nodes=[{"id":key,"x":point.x(),"y":point.y(),"activation":amount(by_id[key].get("activation")),
-                "focus":key==attention,"contact":key in contacts} for key,point in points.items()]
+        visual=self.graph_motion.values
+        nodes=[{"id":key,"x":point.x(),"y":point.y(),"activation":visual[key]["activation"],
+                "focus":key==attention,"contact":key in contacts,
+                "focusStrength":visual[key]["focus"],"contactStrength":visual[key]["contact"]}
+               for key,point in points.items()]
         edges=[]
         for i,edge in enumerate(state.get("edges",[])):
             a,b=edge["source"],edge["target"]
@@ -1128,8 +1169,9 @@ class Overlay(QtWidgets.QWidget):
             middle=(points[a]+points[b])/2;bow=8*math.sin(i*2.4)
             edges.append({"x0":points[a].x(),"y0":points[a].y(),"x1":points[b].x(),"y1":points[b].y(),
                           "cx":middle.x()+bow,"cy":middle.y()+12+abs(bow),"index":i,
-                          "activation":max(amount(by_id[a].get("activation")),amount(by_id[b].get("activation"))),
-                          "weight":amount(edge.get("weight"),.3),"focus":a==attention or b==attention})
+                          "activation":max(visual[a]["activation"],visual[b]["activation"]),
+                          "weight":amount(edge.get("weight"),.3),"focus":a==attention or b==attention,
+                          "focusStrength":max(visual[a]["focus"],visual[b]["focus"])})
         tendrils=[]
         for i,(_,curve,active) in enumerate(gestures):
             values=[curve.elementAt(j) for j in range(4)]
@@ -1145,7 +1187,7 @@ class Overlay(QtWidgets.QWidget):
                                "x":x+i*20,"y":y+(0 if self.reduced_motion else math.sin(i+age)*2),
                                "opacity":max(0.,min(1.,age/.45,(7-age)/2))*.85})
         clip=self.clip_library.clips[sample.clip];delay=clip.delays_ms[sample.index]
-        phase=0. if self.reduced_motion else (max(0.,min(1.,1-sample.next_frame_ms/delay)) if self.fresh(now) else getattr(self,"last_gpu_phase",0.))
+        phase=0. if self.reduced_motion else (getattr(sample,"phase",max(0.,min(1.,1-sample.next_frame_ms/delay))) if self.fresh(now) else getattr(self,"last_gpu_phase",0.))
         self.last_gpu_phase=phase
         rect=self.creature_rect
         self.gpu_scene.setGeometry(self.rect())
@@ -1189,6 +1231,7 @@ class Overlay(QtWidgets.QWidget):
         elapsed = 0 if self.reduced_motion else max(0, clock - self.started)
         anchor, points = self.scene_geometry(now)
         gestures = self.tendril_geometry(points, now)
+        self.graph_motion.set_contacts(key for key,_,_ in gestures)
         if self.gpu_scene is not None and self.gpu_scene.available:
             self.render_gpu_frame(now,anchor,points,gestures)
             self.render_ms=(time.perf_counter()-started)*1000
@@ -1326,6 +1369,7 @@ class Overlay(QtWidgets.QWidget):
         if self.gpu_scene is not None and self.gpu_scene.available:
             if self.reduced_motion:return 250
             if not self.fresh(now):return 500
+            if self.graph_motion.settling:return 33
             if self.hovering or self.press_global is not None or now-self.touch_started<1.6:return 50
             if self.gesture(now) or self.roam_goal is not None and self.can_roam(now):return 66
             return 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
@@ -1918,6 +1962,10 @@ class Overlay(QtWidgets.QWidget):
                 "skin": {**self.skin.diagnostics(),"backend":"gpu-fragment-shader","eye_mask_valid":True,"evaluation_ms":0.} if self.gpu_scene is not None and self.gpu_scene.available else self.skin.diagnostics(),
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
                                       "source": self.awareness.get("source", "unavailable"), "caret_source": "retired", "worker": self.awareness.get("source","unavailable"),
+                                      "typing_available":isinstance(self.awareness.get("typing"),dict),
+                                      "pointer_available":bool(self.awareness.get("pointer",{}).get("available")),
+                                      "windows_available":bool(self.awareness.get("windows",{}).get("available")),
+                                      "microphone_available":bool(self.awareness.get("microphone",{}).get("available")),
                                       "passive_events_dropped":getattr(self,"passive_events_dropped",0)},
                 "frame_interval_ms": self.animation.interval(), "render_ms": round(self.render_ms, 2),
                 "input_mask_ms": round(self.mask_ms, 2),

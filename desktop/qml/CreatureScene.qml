@@ -46,17 +46,8 @@ Item {
         width: 440; height: 340
         scale: Math.min(scene.width/440,scene.height/340)
         transformOrigin: Item.TopLeft
-        // The optional perception sketch contains normalized geometry only.
-        Repeater {
-            model: scene.desktopRects
-            delegate: Rectangle {
-                required property var modelData
-                x: 48+modelData.x*344; y: 156+modelData.y*146
-                width: modelData.w*344; height: modelData.h*146
-                radius: 3; color: "#020e646a"
-                border.width: .55; border.color: "#123fadb2"
-            }
-        }
+        // Window geometry remains private awareness; it is not drawn as UI
+        // boxes behind the organism's memory graph.
         Image {
             visible: !!scene.cursorState.motion && scene.cursorState.motion>.02
             source: scene.glowSourceUrl
@@ -74,11 +65,13 @@ Item {
             model: scene.edges
             delegate: Item {
                 id: edgeItem
-                required property var modelData
-                property real active: modelData.activation
-                property real strength: modelData.weight
-                property real visibility: .55+.45*(.5+.5*Math.sin(scene.clock*.31+modelData.index*1.618))
-                property real edgeAlpha: scene.alpha((13+strength*24+active*72+(modelData.focus?16:0))/255*visibility*scene.graphGain)
+                objectName: "graph-edge-"+entry.index
+                required property var entry
+                property real active: entry.activation
+                property real strength: entry.weight
+                property real focusStrength: entry.focusStrength===undefined ? (entry.focus?1:0) : scene.alpha(entry.focusStrength)
+                property real visibility: .55+.45*(.5+.5*Math.sin(scene.clock*.31+entry.index*1.618))
+                property real edgeAlpha: scene.alpha((13+strength*24+active*72+focusStrength*16)/255*visibility*scene.graphGain)
                 Shape {
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
@@ -86,24 +79,24 @@ Item {
                         strokeColor: Qt.rgba(.26,.75,.79,edgeItem.edgeAlpha*.19)
                         strokeWidth: 4.5+edgeItem.strength
                         capStyle: ShapePath.RoundCap
-                        startX: edgeItem.modelData.x0; startY: edgeItem.modelData.y0
-                        PathQuad { x: edgeItem.modelData.x1; y: edgeItem.modelData.y1; controlX: edgeItem.modelData.cx; controlY: edgeItem.modelData.cy }
+                        startX: edgeItem.entry.x0; startY: edgeItem.entry.y0
+                        PathQuad { x: edgeItem.entry.x1; y: edgeItem.entry.y1; controlX: edgeItem.entry.cx; controlY: edgeItem.entry.cy }
                     }
                     ShapePath {
                         fillColor: "transparent"
                         strokeColor: Qt.rgba(.50,.88,.84,edgeItem.edgeAlpha)
                         strokeWidth: .55+edgeItem.strength*.8
                         capStyle: ShapePath.RoundCap
-                        startX: edgeItem.modelData.x0; startY: edgeItem.modelData.y0
-                        PathQuad { x: edgeItem.modelData.x1; y: edgeItem.modelData.y1; controlX: edgeItem.modelData.cx; controlY: edgeItem.modelData.cy }
+                        startX: edgeItem.entry.x0; startY: edgeItem.entry.y0
+                        PathQuad { x: edgeItem.entry.x1; y: edgeItem.entry.y1; controlX: edgeItem.entry.cx; controlY: edgeItem.entry.cy }
                     }
                 }
                 Image {
                     visible: edgeItem.active>.06
                     source: scene.glowSourceUrl
                     width: 14+edgeItem.active*8; height: width
-                    property real phase: (scene.clock*(.08+edgeItem.active*.15)+edgeItem.modelData.index*.381)%1
-                    property point position: scene.point(edgeItem.modelData,phase)
+                    property real phase: (scene.clock*(.08+edgeItem.active*.15)+edgeItem.entry.index*.381)%1
+                    property point position: scene.point(edgeItem.entry,phase)
                     x: position.x-width/2; y: position.y-height/2
                     opacity: scene.alpha((35+edgeItem.active*100)/255*scene.graphGain)
                 }
@@ -113,36 +106,42 @@ Item {
             model: scene.nodes
             delegate: Item {
                 id: nodeItem
-                required property var modelData
-                x: modelData.x; y: modelData.y
-                property real active: modelData.activation
-                property real radius: modelData.contact ? 6+active*2 : 1.2+active*2.5+(modelData.focus?1:0)
+                objectName: "graph-node-"+entry.index
+                required property var entry
+                x: entry.x; y: entry.y
+                property real active: entry.activation
+                property real focusStrength: entry.focusStrength===undefined ? (entry.focus?1:0) : scene.alpha(entry.focusStrength)
+                property real contactStrength: entry.contactStrength===undefined ? (entry.contact?1:0) : scene.alpha(entry.contactStrength)
+                property real radius: (1-contactStrength)*(1.2+active*2.5+focusStrength)+contactStrength*(6+active*2)
                 Image {
                     source: scene.glowSourceUrl
-                    width: (7+nodeItem.active*12+(nodeItem.modelData.focus?3:0))*3
+                    width: (7+nodeItem.active*12+nodeItem.focusStrength*3)*3
                     height: width; x: -width/2; y: -height/2
-                    opacity: scene.alpha((16+nodeItem.active*95+(nodeItem.modelData.focus?18:0))/255*scene.graphGain*(.75+.25*Math.sin(scene.clock*(.65+nodeItem.active)+nodeItem.modelData.index*1.7)))
+                    opacity: scene.alpha((16+nodeItem.active*95+nodeItem.focusStrength*18)/255*scene.graphGain*(.75+.25*Math.sin(scene.clock*(.65+nodeItem.active)+nodeItem.entry.index*1.7)))
                 }
                 Rectangle {
                     x: -nodeItem.radius; y: -nodeItem.radius
                     width: nodeItem.radius*2; height: width; radius: width/2
-                    color: nodeItem.modelData.contact ? "#326e72" : Qt.rgba(.37,.82,.77,(65+nodeItem.active*150)/255)
+                    color: Qt.rgba(.37*(1-nodeItem.contactStrength)+.196*nodeItem.contactStrength,
+                                   .82*(1-nodeItem.contactStrength)+.431*nodeItem.contactStrength,
+                                   .77*(1-nodeItem.contactStrength)+.447*nodeItem.contactStrength,
+                                   (65+nodeItem.active*150)/255*(1-nodeItem.contactStrength)+nodeItem.contactStrength)
                     border.color: Qt.rgba(.67,.96,.89,scene.alpha((120+nodeItem.active*100)/255*scene.graphGain))
                     border.width: .55
                     Rectangle {
-                        visible: nodeItem.modelData.contact
+                        visible: nodeItem.contactStrength>.001
                         width: parent.width*.44; height: width; radius: width/2
                         x: parent.width*.18; y: parent.height*.12
-                        color: "#abf4df"; opacity: .8
+                        color: "#abf4df"; opacity: .8*nodeItem.contactStrength
                     }
                 }
                 Rectangle {
-                    visible: nodeItem.modelData.focus
+                    visible: nodeItem.focusStrength>.001
                     x: -width/2; y: -height/2
                     width: (nodeItem.radius+3)*2; height: width; radius: width/2
                     color: "transparent"; border.width: .65
                     border.color: Qt.rgba(.62,.96,.87,(.15+nodeItem.active*.25)*scene.graphGain)
-                    opacity: .65+.2*Math.sin(scene.clock*.7)
+                    opacity: nodeItem.focusStrength*(.65+.2*Math.sin(scene.clock*.7))
                 }
             }
         }
@@ -150,26 +149,26 @@ Item {
             model: scene.tendrils
             delegate: Shape {
                 id: arm
-                required property var modelData
+                required property var entry
                 preferredRendererType: Shape.CurveRenderer
                 ShapePath {
                     strokeColor: "#ef061c35"; strokeWidth: 1.1
                     fillGradient: LinearGradient {
-                        x1: arm.modelData.x0; y1: arm.modelData.y0
-                        x2: arm.modelData.x1; y2: arm.modelData.y1
+                        x1: arm.entry.x0; y1: arm.entry.y0
+                        x2: arm.entry.x1; y2: arm.entry.y1
                         GradientStop { position: 0; color: "#16566b" }
                         GradientStop { position: .38; color: "#276b7c" }
                         GradientStop { position: .70; color: "#54497d" }
                         GradientStop { position: 1; color: "#55d9c3" }
                     }
-                    PathSvg { path: arm.modelData.outline }
+                    PathSvg { path: arm.entry.outline }
                 }
                 ShapePath {
                     fillColor: "transparent"; strokeColor: "#708cecda"; strokeWidth: .8
-                    startX: arm.modelData.x0; startY: arm.modelData.y0
-                    PathCubic { x: arm.modelData.x1; y: arm.modelData.y1
-                        control1X: arm.modelData.cx0; control1Y: arm.modelData.cy0
-                        control2X: arm.modelData.cx1; control2Y: arm.modelData.cy1 }
+                    startX: arm.entry.x0; startY: arm.entry.y0
+                    PathCubic { x: arm.entry.x1; y: arm.entry.y1
+                        control1X: arm.entry.cx0; control1Y: arm.entry.cy0
+                        control2X: arm.entry.cx1; control2Y: arm.entry.cy1 }
                 }
             }
         }
@@ -208,9 +207,9 @@ Item {
         Repeater {
             model: scene.glyphs
             delegate: Image {
-                required property var modelData
-                source: modelData.source; x: modelData.x; y: modelData.y
-                width: 17; height: 20; opacity: modelData.opacity
+                required property var entry
+                source: entry.source; x: entry.x; y: entry.y
+                width: 17; height: 20; opacity: entry.opacity
             }
         }
         Rectangle {

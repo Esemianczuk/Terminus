@@ -62,6 +62,65 @@ def desktop_rectangles(rectangles):
     return result
 
 
+class SceneRows(QtCore.QAbstractListModel):
+    """Keep QML delegates alive while replacing only changed primitive data.
+
+    Replacing a JS list resets a Repeater, destroying its Shapes and textures
+    every frame. A fixed map role lets Qt retain those delegates and update
+    bindings through dataChanged. Only actual topology changes insert/remove
+    rows. There are no model resets, autonomous timers, or rendering callbacks.
+    """
+    EntryRole = int(QtCore.Qt.ItemDataRole.UserRole) + 1
+
+    def __init__(self, maximum, parent=None):
+        super().__init__(parent)
+        self.maximum = maximum
+        self.rows = []
+        self.inserted = self.removed = self.changed = 0
+
+    def roleNames(self):
+        return {self.EntryRole: b"entry"}
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return 0 if parent.isValid() else len(self.rows)
+
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if role != self.EntryRole or not index.isValid() or not 0 <= index.row() < len(self.rows):
+            return None
+        return dict(self.rows[index.row()])
+
+    def update(self, entries):
+        incoming = [dict(entry) for entry in entries[:self.maximum]]
+        previous = len(self.rows)
+        common = min(previous, len(incoming))
+        changed = [row for row in range(common) if self.rows[row] != incoming[row]]
+        if len(incoming) < previous:
+            self.beginRemoveRows(QtCore.QModelIndex(), len(incoming), previous-1)
+            del self.rows[len(incoming):]
+            self.endRemoveRows()
+            self.removed += previous-len(incoming)
+        for row in changed:
+            self.rows[row] = incoming[row]
+        if len(incoming) > previous:
+            self.beginInsertRows(QtCore.QModelIndex(), previous, len(incoming)-1)
+            self.rows.extend(incoming[previous:])
+            self.endInsertRows()
+            self.inserted += len(incoming)-previous
+        # Coalesce adjacent changes. The common case is one compact signal for
+        # the moving graph, with no delegate construction or scene-tree churn.
+        if changed:
+            start = end = changed[0]
+            for row in changed[1:]:
+                if row == end+1:
+                    end = row
+                else:
+                    self.dataChanged.emit(self.index(start,0), self.index(end,0), [self.EntryRole])
+                    start = end = row
+            self.dataChanged.emit(self.index(start,0), self.index(end,0), [self.EntryRole])
+            self.changed += len(changed)
+        return bool(changed or previous != len(incoming))
+
+
 class PackedArtwork:
     """GPU playback metadata plus at most one CPU atlas for native hit testing."""
     def __init__(self,asset_root):
@@ -140,6 +199,8 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         self.frames_rendered = 0
         self.scene_graph_initialized = False
         self._properties = {}
+        self._models = {"nodes": SceneRows(MAX_NODES,self), "edges": SceneRows(MAX_EDGES,self),
+                        "tendrils": SceneRows(3,self), "glyphs": SceneRows(8,self)}
         self.manifest = {}
         self.artwork=None
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
@@ -159,6 +220,8 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
             self.errors.extend(error.toString() for error in self.errors_qml())
             self.available = self.status() == self.Status.Ready and not self.errors
             if self.available:
+                for key,model in self._models.items():
+                    self.rootObject().setProperty(key,model)
                 self.rootObject().rendererError.connect(lambda message:self._graphics_error(None,message))
                 self._set("glowSourceUrl", QtCore.QUrl.fromLocalFile(str(self.asset_root / "glow.png")).toString())
                 maximum=finite(self.manifest.get("max_flow_pixels"),64,64)
@@ -198,6 +261,10 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         self.scene_graph_initialized = False
 
     def _set(self, key, value):
+        model = self._models.get(key)
+        if model is not None:
+            model.update(value)
+            return
         if self._properties.get(key) != value:
             self.rootObject().setProperty(key, value)
             self._properties[key] = value
@@ -262,4 +329,8 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
                 "hit_cache_bytes":self.artwork.hit_cache_bytes if self.artwork else 0,
                 "hit_cached_clip":self.artwork.cached_clip if self.artwork else None,
                 "maximum_nodes":MAX_NODES,"maximum_edges":MAX_EDGES,
+                "persistent_models":True,"model_resets":0,
+                "model_rows":{key:model.rowCount() for key,model in self._models.items()},
+                "model_insertions":sum(model.inserted for model in self._models.values()),
+                "model_removals":sum(model.removed for model in self._models.values()),
                 "input_handlers":0,"autonomous_timers":0}

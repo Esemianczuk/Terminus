@@ -42,7 +42,7 @@ The desktop window does not accept keyboard focus. Its optional observer runs in
 
 **Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back or sign in again.
 
-The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. The moving lights express activity on those connections. Their exact timing is animation, not a literal trace of each calculation.
+The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Their exact timing is animation, not a literal trace of each calculation.
 
 His state lives in `.local/`, outside Git. Keep that folder. Updating the source does not give you a new creature.
 

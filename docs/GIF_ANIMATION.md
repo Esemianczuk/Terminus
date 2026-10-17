@@ -2,6 +2,8 @@
 
 The approved GIFs supply the native body's key poses and timing. Idle, moving, sleep and typing are persistent loops. Takeoff, landing, waking, settling, poking, stretching and yawning are finite sequences. Facing instantly mirrors the current pose without resetting playback. The unused turn sequence remains a reference asset; there is no turning dissolve. Repeated core snapshots do not restart a loop or replay a transition, and carrying can interrupt a gesture immediately.
 
+Stretch and yawn use 2.6 times their source duration, giving each shipped one-second flourish 2.6 seconds to unfold. This is a playback-time adjustment; it changes neither source frames nor hashes. Idle, moving, sleep, typing and the other transition rates remain unchanged. The player supplies the exact normalized frame phase and scaled frame deadline, so the GPU morph follows the slower gesture instead of accelerating between its key poses.
+
 The graph remains a separate view of actual memory. Contacts use registered anchors and facing; graph geometry and inscriptions are never mirrored with the body. Subtle, Clear and Bright graph settings persist separately from memory. Bright is the default. Extra light does not enlarge the input shape.
 
 ## Source assets

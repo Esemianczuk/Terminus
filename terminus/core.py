@@ -371,9 +371,9 @@ class Organism:
     def _gesture(self, kind, now, duration=None, strength=.5, target_id=None):
         # A blink gesture is a short double-blink envelope. Each lid closure is
         # brief in the renderer; the envelope outlives the native 1 Hz poll.
-        durations = {"blink": 1.8, "peer": 3.4, "tilt": 2.8, "stretch": 5.8,
-                     "yawn": 4.4, "tendril-inspect": 5.2, "startled": 1.25,
-                     "curl": 5.8, "settle": 5., "sleep": 6.5, "dream": 7., "signal": 4.8,
+        durations = {"blink": 1.8, "peer": 7.6, "tilt": 2.8, "stretch": 8.4,
+                     "yawn": 6.2, "tendril-inspect": 10.8, "startled": 1.25,
+                     "curl": 5.8, "settle": 5., "sleep": 6.5, "dream": 7., "signal": 8.,
                      "imitate": 6.}
         d, policy = self.data, self.data["ethology"]
         policy["gesture_serial"] += 1
@@ -694,7 +694,11 @@ class Organism:
         gesture = d["gesture"]
         if gesture and now >= gesture["started_at"] + gesture["duration"]:
             d["gesture"] = None
-        if now >= policy["next_revisit_at"]:
+        holding_reach = (gesture and gesture["kind"] in {"peer", "tendril-inspect", "signal", "stretch"}
+                         and now < gesture["started_at"] + gesture["duration"])
+        if now >= policy["next_revisit_at"] and holding_reach:
+            policy["next_revisit_at"] = gesture["started_at"] + gesture["duration"] + 2
+        elif now >= policy["next_revisit_at"]:
             policy["next_revisit_at"] = now + 24 + float(self.rng.uniform(0, 18))
             if not sleeping and lat["agitation"] < .35 and d["motives"]["exploration"] > .25:
                 if self._revisit(now):

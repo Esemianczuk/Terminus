@@ -55,14 +55,27 @@ artwork or a new observation added to the creature's memory.
 ## Network and perception
 
 The graph uses scenegraph curve geometry and a single reusable glow texture.
-Topology and node values change when the core state changes; uniform time moves
-the signals. Three small tapered arm meshes follow actual attention contacts.
-There is no raster canvas to shade, copy, brighten and upload on every tick.
+Persistent list models keep node, edge, arm and glyph delegates alive while their
+primitive values change. Updating a frame does not replace a JavaScript list and
+rebuild the scene. Rows are inserted or removed only as needed; uniform time
+moves the signals. Three small tapered arm meshes follow actual attention
+contacts. There is no raster canvas to shade, copy, brighten and upload on every
+tick.
 
-An optional, faint sketch of the visible desktop uses normalized window
-rectangles and cursor position. It contains no screenshots, titles or text. The
-renderer only displays primitives supplied by the local awareness controller.
-Missing platform permissions or unavailable sensors simply omit the sketch.
+`desktop/graph_motion.py` eases the visible anchor, node positions, activation,
+focus and contact strength toward real core targets with a 0.18-second
+exponential time constant. Graph curves, limbs and hit geometry use the same
+filtered coordinates, so a limb cannot trail behind a separately moving node.
+The view temporarily uses about thirty updates per second while those changes
+settle, then returns to its quiet cadence. Reduced motion applies targets
+directly; stale state freezes the presentation. This filter changes no organism
+state, creates no events and owns no timer or second simulation.
+
+Coarse window rectangles remain private awareness used for gaze and exploration;
+they are not drawn as boxes behind the memory graph. Cursor movement and an
+available microphone-use flag can have small visual cues. These are metadata,
+not screenshots, window titles, text or recorded audio. Missing platform
+permissions or unavailable sensors leave the relevant cues absent.
 
 ## Rebuilding and measuring
 

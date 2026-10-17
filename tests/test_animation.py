@@ -122,10 +122,44 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual(player.advance(.20, "idle", poke_id="p-one").clip, "idle")
         gesture = {"id": "g-one", "kind": "stretch"}
         self.assertEqual(player.advance(.22, "idle", gesture=gesture).clip, "stretch")
-        self.assertEqual(player.advance(.31, "idle", gesture=gesture).index, 1)
-        self.assertEqual(player.advance(.40, "idle", gesture=gesture).clip, "idle")
+        self.assertEqual(player.advance(.31, "idle", gesture=gesture).index, 0)
+        self.assertEqual(player.advance(.40, "idle", gesture=gesture).index, 1)
+        self.assertEqual(player.advance(.64, "idle", gesture=gesture).clip, "idle")
         self.assertEqual(player.advance(1.4, "idle", gesture=gesture).clip, "idle")
         self.assertEqual(player.advance(1.5, "idle", gesture="yawn", gesture_id="g-two").clip, "yawn")
+
+    def test_only_stretch_and_yawn_are_slower_with_scaled_deadlines_and_exact_phase(self):
+        library, _ = self.library()
+        original = {name: (clip.delays_ms, clip.duration_ms, tuple(frame.cacheKey() for frame in clip.frames))
+                    for name, clip in library.clips.items()}
+        for kind in ("stretch", "yawn"):
+            with self.subTest(kind=kind):
+                player = ClipPlayer(library)
+                player.advance(0, "idle")
+                first = player.advance(1, "idle", gesture=kind, gesture_id=kind)
+                self.assertEqual(first.frame_duration_ms, 156)
+                self.assertEqual(first.next_frame_ms, 156)
+                middle = player.advance(1.078, "idle", gesture=kind, gesture_id=kind)
+                self.assertEqual(middle.index, 0)
+                self.assertAlmostEqual(middle.phase, .5)
+                self.assertLessEqual(abs(middle.next_frame_ms - 78), 3)
+                second = player.advance(1.286, "idle", gesture=kind, gesture_id=kind)
+                self.assertEqual(second.index, 1)
+                self.assertAlmostEqual(second.phase, .5)
+                self.assertEqual(second.frame_duration_ms, 260)
+                self.assertEqual(player.advance(1.415, "idle").clip, kind)
+                self.assertEqual(player.advance(1.417, "idle").clip, "idle")
+        for kind in ("idle", "moving", "sleep", "typing"):
+            with self.subTest(loop=kind):
+                player = ClipPlayer(library)
+                first = player.advance(0, kind)
+                middle = player.advance(.03, kind)
+                self.assertEqual(first.frame_duration_ms, 60)
+                self.assertAlmostEqual(middle.phase, .5)
+                self.assertEqual(player.advance(.061, kind).index, 1)
+                self.assertEqual(player.advance(.161, kind).index, 0)
+        self.assertEqual(original, {name: (clip.delays_ms, clip.duration_ms, tuple(frame.cacheKey() for frame in clip.frames))
+                                    for name, clip in library.clips.items()})
 
     def test_waking_and_entering_sleep_use_finite_clips(self):
         library, _ = self.library()

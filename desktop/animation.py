@@ -23,6 +23,7 @@ from PySide6 import QtGui
 LOOP_STATES = ("idle", "moving", "sleep", "typing")
 TRANSITIONS = {"takeoff", "landing", "turn", "wake", "poke", "sleep-in", "stretch", "yawn", "blink", "peer", "signal"}
 DEFAULT_ANCHORS = MappingProxyType({"left": (.18, .78), "right": (.82, .78), "center": (.5, .80)})
+GESTURE_DURATION_SCALE = MappingProxyType({"stretch": 2.6, "yawn": 2.6})
 
 
 class ClipError(ValueError):
@@ -58,6 +59,8 @@ class AnimationFrame:
     next_frame_ms: int
     anchors: Mapping[str, tuple[float, float]]
     fallback: bool
+    phase: float = 0.
+    frame_duration_ms: float = 0.
 
 
 class ClipLibrary:
@@ -278,8 +281,9 @@ class ClipPlayer:
         self._clip, self._target, self._started_at = clip, target, now
 
     def _complete(self, now):
-        if not self._clip.loop and (now - self._started_at) * 1000 >= self._clip.duration_ms:
-            end = self._started_at + self._clip.duration_ms / 1000
+        duration = self._clip.duration_ms * GESTURE_DURATION_SCALE.get(self._clip.name, 1.)
+        if not self._clip.loop and (now - self._started_at) * 1000 >= duration:
+            end = self._started_at + duration / 1000
             self._enter_loop(self._target, end)
 
     def _reconcile(self, desired, now):
@@ -373,8 +377,15 @@ class ClipPlayer:
         return self._last_sample
 
     def _sample(self, now, *, first=False, quiet=False):
-        index, delay = self._clip.frame_at(now - self._started_at, first=first)
+        scale = GESTURE_DURATION_SCALE.get(self._clip.name, 1.)
+        elapsed = max(0., now - self._started_at) / scale
+        index, delay = self._clip.frame_at(elapsed, first=first)
+        position = (0. if first else elapsed * 1000 % self._clip.duration_ms if self._clip.loop
+                    else min(elapsed * 1000, self._clip.duration_ms - .001))
+        beginning = self._clip.ends_ms[index - 1] if index else 0.
+        phase = max(0., min(1., (position - beginning) / self._clip.delays_ms[index]))
         return AnimationFrame(self._clip.frames[index], self._clip.name, index, self._target,
                               not self._clip.loop, self._facing < 0,
-                              1000 if quiet else delay, self._clip.anchors,
-                              self._clip.loop and self._clip.name != self._target)
+                              1000 if quiet else math.ceil(delay * scale), self._clip.anchors,
+                              self._clip.loop and self._clip.name != self._target,
+                              phase, self._clip.delays_ms[index] * scale)
