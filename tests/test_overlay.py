@@ -512,6 +512,7 @@ class OverlayTests(unittest.TestCase):
         snapshot["text"] = "secret content"
         widget.receive_awareness(snapshot)
         self.assertEqual(len(events), 1)
+
         self.assertEqual(events[0][0], "activity")
         self.assertEqual(events[0][1]["context"], "typing")
         self.assertEqual(events[0][1]["source"], "live")
@@ -535,6 +536,16 @@ class OverlayTests(unittest.TestCase):
         widget.disconnect("offline")
         widget.receive_awareness(snapshot)
         self.assertEqual(len(events), 1)
+
+    def test_idle_mac_typing_permission_is_visible_before_first_key(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        snapshot = self.awareness_snapshot(widget.last_seen)
+        snapshot["source"] = "mac-readonly"
+        snapshot["typing"] = {"active": False, "last_at": None, "rate": 0., "pulse": 0., "sequence": 0}
+        widget.receive_awareness(snapshot)
+        self.assertIsNone(widget.awareness["typing"])
+        self.assertTrue(widget.diagnostics()["desktop_awareness"]["typing_available"])
 
     def test_typing_pose_requires_both_authoritative_imitation_and_recent_real_activity(self):
         widget = self.widget()

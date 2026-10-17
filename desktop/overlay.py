@@ -688,6 +688,7 @@ class Overlay(QtWidgets.QWidget):
         if window is not None:
             window["own"] = snapshot["focused_window"].get("own") is True
         typing = snapshot.get("typing")
+        typing_available = isinstance(typing, dict) and snapshot.get("secure_entry") is not True
         clean_typing = None
         if isinstance(typing, dict):
             last = typing.get("last_at")
@@ -703,6 +704,7 @@ class Overlay(QtWidgets.QWidget):
         self.awareness = {"available": snapshot.get("available") is True,
                           "enabled": snapshot.get("enabled") is True, "observed_at": observed,
                           "focused_window": window, "typing": clean_typing,
+                          "typing_available": typing_available,
                           "caret": None if snapshot.get("secure_entry") is True else rectangle(snapshot.get("caret")),
                           "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "mac-readonly", "unavailable"} else "unavailable",
                           "permission": snapshot.get("permission") if snapshot.get("permission") in {"local-observation", "disabled", "unsupported"} else "unsupported",
@@ -1972,7 +1974,7 @@ class Overlay(QtWidgets.QWidget):
                 "skin": {**self.skin.diagnostics(),"backend":"gpu-fragment-shader","eye_mask_valid":True,"evaluation_ms":0.} if self.gpu_scene is not None and self.gpu_scene.available else self.skin.diagnostics(),
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
                                       "source": self.awareness.get("source", "unavailable"), "caret_source": "retired", "worker": self.awareness.get("source","unavailable"),
-                                      "typing_available":isinstance(self.awareness.get("typing"),dict),
+                                      "typing_available":bool(self.awareness.get("typing_available")),
                                       "pointer_available":bool(self.awareness.get("pointer",{}).get("available")),
                                       "windows_available":bool(self.awareness.get("windows",{}).get("available")),
                                       "microphone_available":bool(self.awareness.get("microphone",{}).get("available")),
