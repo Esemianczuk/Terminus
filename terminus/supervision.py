@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
 
@@ -65,6 +66,9 @@ def installed(root, data):
 
 
 def properties(role):
+    if sys.platform == 'darwin':
+        from .platform_macos import properties as mac_properties
+        return mac_properties(role)
     command = ['systemctl','--user','show',UNITS[role],
                '--property=MainPID,ActiveState,SubState,UnitFileState,NRestarts,WatchdogUSec,Result,WorkingDirectory']
     result = subprocess.run(command,text=True,capture_output=True,timeout=5)
@@ -104,6 +108,9 @@ def delegate(role, action, root, data, *, scale=None):
     """Existing manager CLIs hand control to systemd only after explicit install."""
     if not installed(root,data):
         return None
+    if sys.platform == 'darwin':
+        from .platform_macos import action as mac_action
+        return mac_action(role,action,root,data,scale)
     unit = UNITS[role]
     if action in {'start','restart','stop'}:
         set_paused(role,data,action=='stop')

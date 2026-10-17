@@ -1130,7 +1130,7 @@ class Overlay(QtWidgets.QWidget):
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
             region = region.united(region.translated(dx, dy))
         self.input_region = region
-        if self.mask() != region:
+        if sys.platform != "darwin" and self.mask() != region:
             self.setMask(region)
         self.mask_ms = (time.perf_counter() - started) * 1000
 
@@ -1638,7 +1638,10 @@ class Overlay(QtWidgets.QWidget):
         # the unit is intentional; a process exit or crash otherwise recovers.
         if os.environ.get("TERMINUS_SERVICE") == "desktop":
             set_paused("desktop", self.client.data_dir, True)
-            QtCore.QProcess.startDetached("systemctl", ["--user", "--no-block", "stop", "terminus-desktop.service"])
+            if sys.platform == "darwin":
+                QtCore.QProcess.startDetached("launchctl", ["bootout", f"gui/{os.getuid()}/org.terminus.desktop"])
+            else:
+                QtCore.QProcess.startDetached("systemctl", ["--user", "--no-block", "stop", "terminus-desktop.service"])
         QtWidgets.QApplication.quit()
 
     def menu_visibility(self, visible):
@@ -1777,6 +1780,13 @@ def main(argv=None):
     if args.no_awareness:
         overlay.awareness_enabled = False
     overlay.show()
+    mac_presence = None
+    if sys.platform == "darwin" and not args.smoke_test:
+        try:
+            from desktop.macos import MacPresence
+        except ModuleNotFoundError:
+            from macos import MacPresence
+        mac_presence = MacPresence(overlay)
     if not args.smoke_test:
         overlay.start_awareness()
     # A short Qt timer gives Python a regular opportunity to receive SIGTERM.

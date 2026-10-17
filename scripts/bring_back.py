@@ -105,9 +105,17 @@ def main():
                     notification('Already checking on the little fella.')
                 return 0
             if args.guardian:
-                guardian()
+                if sys.platform == 'darwin':
+                    from terminus.platform_macos import guardian as mac_guardian
+                    mac_guardian(ROOT)
+                else:
+                    guardian()
             else:
-                bring_back()
+                if sys.platform == 'darwin':
+                    from terminus.platform_macos import bring_back as mac_bring_back
+                    if mac_bring_back(ROOT):raise RuntimeError('Desktop presence is not yet confirmed.')
+                else:
+                    bring_back()
                 notification('He’s here. His core is healthy and he’s visible on your desktop.')
                 print('Terminus is visible, connected, and protected by automatic recovery.')
         return 0

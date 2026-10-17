@@ -180,6 +180,9 @@ def main():
     parser.add_argument('--part',choices=('all','core','desktop'),default='all')
     args=parser.parse_args()
     try:
+        if sys.platform == 'darwin':
+            from terminus.platform_macos import main as mac_main
+            return mac_main(ROOT,args)
         if args.action=='install':
             return install()
         if not installed(ROOT,ROOT/'.local'):
