@@ -1161,6 +1161,18 @@ class Overlay(QtWidgets.QWidget):
             interval = min(interval, max(20, min(250, int(self.clip_sample.next_frame_ms))))
             if self.skin.mode != "off" and self.skin.atlas.frames:
                 interval = min(interval, 167 if (self.state or {}).get("behavior") in {"sleep", "dream"} else 66)
+        if sys.platform == "darwin":
+            interacting = self.hovering or self.press_global is not None or now-self.touch_started < 1.6
+            moving = self.roam_goal is not None and self.can_roam(now)
+            if interacting:
+                interval = max(interval, 50)
+            elif moving or self.gesture(now):
+                interval = max(interval, 66)
+            else:
+                # A fanless laptop should not repaint a quiet resident at GIF
+                # speed just because the next source frame is near its boundary.
+                floor = 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
+                interval = max(interval, floor)
         return interval
 
     def presentation_interval(self, now):
@@ -1706,6 +1718,7 @@ class Overlay(QtWidgets.QWidget):
         return {"pid": os.getpid(), "updated_at": time.time(), "visible": self.isVisible(),
                 "isExposed": bool(handle and handle.isExposed()), "nativewinid": int(self.winId()),
                 "platform": QtWidgets.QApplication.platformName(),
+                "native_focus": self.mac_presence.diagnostics() if hasattr(self,"mac_presence") else None,
                 "translucent": self.testAttribute(QtCore.Qt.WA_TranslucentBackground),
                 "topmost": bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint),
                 "frameless": bool(self.windowFlags() & QtCore.Qt.FramelessWindowHint),
@@ -1779,7 +1792,6 @@ def main(argv=None):
         overlay.reduced_motion = True
     if args.no_awareness:
         overlay.awareness_enabled = False
-    overlay.show()
     mac_presence = None
     if sys.platform == "darwin" and not args.smoke_test:
         try:
@@ -1787,6 +1799,8 @@ def main(argv=None):
         except ModuleNotFoundError:
             from macos import MacPresence
         mac_presence = MacPresence(overlay)
+        overlay.mac_presence = mac_presence
+    overlay.show()
     if not args.smoke_test:
         overlay.start_awareness()
     # A short Qt timer gives Python a regular opportunity to receive SIGTERM.

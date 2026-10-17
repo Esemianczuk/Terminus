@@ -665,6 +665,20 @@ class OverlayTests(unittest.TestCase):
         state["motion"]["intent"] = "rest"
         self.assertGreaterEqual(widget.frame_interval(now), 66)
 
+    def test_mac_quiet_frame_budget_does_not_follow_gif_boundary_or_slow_dragging(self):
+        widget = self.widget()
+        state = self.snapshot()
+        state.update(server_time=1000., behavior="idle", motion={"intent":"rest"})
+        widget.receive_state(state)
+        now = widget.last_seen
+        widget.advance_presentation(now, .1)
+        with patch.object(OVERLAY.sys, "platform", "darwin"):
+            self.assertGreaterEqual(widget.frame_interval(now), 125)
+            state["behavior"] = "sleep"
+            self.assertGreaterEqual(widget.frame_interval(now), 250)
+            widget.press_global = OVERLAY.QtCore.QPoint(10,10)
+            self.assertLessEqual(widget.frame_interval(now), 66)
+
     def test_closed_eyes_do_not_open_during_a_sleeping_blink(self):
         widget = self.widget()
         state = self.snapshot()

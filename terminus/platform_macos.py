@@ -82,7 +82,9 @@ def definition(role,root):
     definition={'Label':LABELS[role],'ProgramArguments':commands[role],'WorkingDirectory':str(root),
                 'RunAtLoad':True,'LimitLoadToSessionType':'Aqua','ThrottleInterval':3,'ExitTimeOut':15,
                 'EnvironmentVariables':{'PATH':'/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
-                                        'PYTHONUNBUFFERED':'1','TERMINUS_SERVICE':role},
+                                        'PYTHONUNBUFFERED':'1','TERMINUS_SERVICE':role,
+                                        'OPENBLAS_NUM_THREADS':'1','OMP_NUM_THREADS':'1',
+                                        'VECLIB_MAXIMUM_THREADS':'1','MKL_NUM_THREADS':'1'},
                 'StandardOutPath':str(data/('macos-'+role+'.log')),
                 'StandardErrorPath':str(data/('macos-'+role+'.log')),'Umask':63}
     if role in {'core','desktop'}:definition['KeepAlive']=True

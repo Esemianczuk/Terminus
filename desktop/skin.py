@@ -119,7 +119,9 @@ class Surface:
     pixels: np.ndarray
     base: np.ndarray
     influence: np.ndarray
-    protected: np.ndarray
+    active: np.ndarray
+    light: np.ndarray
+    highlights: np.ndarray
     x: np.ndarray
     y: np.ndarray
     broad: np.ndarray
@@ -128,7 +130,7 @@ class Surface:
 
     @property
     def nbytes(self):
-        return sum(getattr(self,k).nbytes for k in ('pixels','base','influence','protected'))
+        return sum(getattr(self,k).nbytes for k in ('pixels','base','influence','active','light','highlights'))
 
 
 def spatial_fields(width, height):
@@ -149,9 +151,13 @@ def surface(image, polygons, width, height, fields=None):
     scaled = image.scaled(width,height,QtCore.Qt.IgnoreAspectRatio,QtCore.Qt.SmoothTransformation)
     pixels = rgba(scaled)
     protected, influence = eye_field(polygons,width,height)
-    influence[pixels[:,:,3] == 0] = 0
-    # Irregular chromatophore islands rather than an image-wide hue rotation.
-    return Surface(pixels,pixels[:,:,:3].astype(np.float32)/255,influence,protected,
+    # Shade only painted, unprotected skin. Full-canvas arithmetic spent most
+    # of each frame recomputing transparent pixels and then restoring them.
+    active = np.flatnonzero((pixels[:,:,3] > 0) & ~protected).astype(np.int32)
+    base = pixels.reshape(-1,4)[active,:3].astype(np.float32)/255
+    light = np.einsum('ij,j->i',base,LUMA)
+    highlights = smooth(.62,.96,light)[:,None]*.60
+    return Surface(pixels,base,influence.ravel()[active],active,light,highlights,
                    *(fields if fields is not None else spatial_fields(width,height)))
 
 
@@ -331,17 +337,14 @@ class SkinEngine:
             self.material = material
             self.material_key = material_key
         material = self.material
-        light = s.base@LUMA
-        highlights = smooth(.62,.96,light)[...,None]*.60
-        color = material[:,:,:3]*(.16+1.13*light[...,None])
-        color = color*(1-highlights)+s.base*highlights
-        amount = np.clip(material[:,:,3]*self.intensity*s.influence,0,.94)[...,None]
+        pigment = material.reshape(-1,4)[s.active]
+        color = pigment[:,:3]*(.16+1.13*s.light[:,None])
+        color = color*(1-s.highlights)+s.base*s.highlights
+        amount = np.clip(pigment[:,3]*self.intensity*s.influence,0,.94)[:,None]
         pixels = s.pixels.copy()
-        pixels[:,:,:3] = np.rint(np.clip(s.base*(1-amount)+color*amount,0,1)*255).astype(np.uint8)
-        # Explicit byte-for-byte restoration includes antialias guard and RGB
-        # in transparent pixels; alpha has never entered shader arithmetic.
-        keep = s.protected | (s.pixels[:,:,3] == 0)
-        pixels[keep] = s.pixels[keep]
+        pixels.reshape(-1,4)[s.active,:3] = np.rint(np.clip(s.base*(1-amount)+color*amount,0,1)*255).astype(np.uint8)
+        # Eyes, antialias guards, alpha and transparent RGB never enter the
+        # scatter above. Their source bytes remain untouched by construction.
         self.result = QtGui.QImage(pixels.data,width,height,pixels.strides[0],QtGui.QImage.Format_RGBA8888).copy()
         self.result = self.result.convertToFormat(sample.image.format())
         self.result_key = result_key

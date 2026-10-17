@@ -15,6 +15,8 @@ def test_launch_agents_keep_native_processes_and_use_actual_checkout():
         assert value['Umask']==0o077
         assert value['EnvironmentVariables']['TERMINUS_SERVICE']==role
         assert 'token' not in value['EnvironmentVariables']
+        for name in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','VECLIB_MAXIMUM_THREADS','MKL_NUM_THREADS'):
+            assert value['EnvironmentVariables'][name]=='1'
         if role in {'core','desktop'}:assert value['KeepAlive'] is True
         else:assert value['StartInterval'] in (30,600) and 'KeepAlive' not in value
     assert '--allow-network' not in mac.definition('core',root)['ProgramArguments']
