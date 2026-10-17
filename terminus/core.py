@@ -223,6 +223,142 @@ class Organism:
                                    "survey_until": 0., "dream_until": 0.,
                                    "linger_until": now, "attention_reason": "rest",
                                    "attention_visits": {}, "revisits": 0})
+        # Only bounded activity summaries enter this policy. Migration neither
+        # replays old events nor changes identity, learned weights or RNG state.
+        d["ethology"].setdefault("activity", {
+            "typing": {"last_at": -1e12, "until": 0., "level": 0., "gap_pending": False},
+            "microphone": {"last_at": -1e12, "until": 0., "level": 0., "gap_pending": False},
+            "pointer": None, "desktop": None,
+            "episode_until": 0., "rest_until": 0., "wake_until": 0.,
+            "last_wake_at": -1e12, "last_gap_at": -1e12,
+            "gap_due_at": 0., "gap_deadline": 0., "gap_target_id": None,
+        })
+
+    def _observe_activity(self, event, node, now, observed_at):
+        """Attend to coarse live rhythms without treating them as user commands.
+
+        Returning ``managed`` keeps passive observations out of the ordinary
+        startle/response lottery. Weak legacy typing cues retain their modest
+        imitation policy. Keyboard identity, text and audio never enter here.
+        """
+        context = event["context"].casefold()
+        if (event["kind"] != "activity" or event["source"] != "live"
+                or context not in {"typing", "typing-pause", "microphone", "pointer", "desktop"}):
+            return False, False
+        level = clamp(event["intensity"])
+        managed = context != "typing" or level >= .45
+        if not 0 <= now - observed_at <= 8:
+            return managed, False
+        d, policy = self.data, self.data["ethology"]["activity"]
+        if context in {"pointer", "desktop"}:
+            previous = policy[context]
+            if previous and observed_at < previous["observed_at"]:
+                return True, False
+            summary = {"observed_at": observed_at, "level": level}
+            # Geometry belongs only to the local view. Even if an old client
+            # supplies x/y, passive activity cannot retain a cursor trajectory.
+            policy[context] = summary
+            return True, False
+        channel = policy["typing" if context == "typing-pause" else context]
+        if observed_at < channel["last_at"]:
+            return managed, False
+        if context == "typing-pause" or level == 0:
+            channel["until"] = min(channel["until"], now)
+            if channel["gap_pending"] and now - channel["last_at"] <= 30:
+                self._queue_activity_gap(node["id"], now, observed_at)
+            channel["gap_pending"] = False
+            channel["last_at"] = observed_at
+            channel["level"] = 0.
+            return managed, False
+        channel["last_at"], channel["level"] = observed_at, level
+        channel["until"] = observed_at + (12 if context == "typing" else 20)
+        if level < .45:
+            return managed, False
+        channel["gap_pending"] = True
+        # A long work session invites short visits and real rests. Repeated
+        # refreshes cannot extend this ninety-second episode indefinitely.
+        if now >= policy["episode_until"]:
+            if policy["episode_until"] > 0 and now < policy["episode_until"] + 45:
+                policy["rest_until"] = policy["episode_until"] + 45
+                return True, False
+            policy["episode_until"] = now + 90
+            policy["rest_until"] = 0.
+        if now < policy["rest_until"]:
+            return True, False
+        policy["wake_until"] = min(policy["episode_until"], max(policy["wake_until"], now + 24))
+        sleeping = d["behavior"] in {"sleep", "dream"}
+        if sleeping and now - policy["last_wake_at"] < 45:
+            return True, False
+        if sleeping:
+            policy["last_wake_at"] = now
+            d["ethology"]["survey_until"] = 0.
+            d["latent"]["sleepiness"] = min(d["latent"]["sleepiness"], .34)
+            d["latent"]["focus"] = max(d["latent"]["focus"], .30)
+            d["last_attention_at"] = now
+            self._attend(node, now, reason="activity")
+            self._behavior("attend", now)
+            self._gesture("stretch", now, strength=.3, target_id=d["attention"])
+            self._motion("perch", now, 16, .2, d["attention"])
+            return True, True
+        if context == "typing" and now - d["ethology"].get("last_imitated_at", -1e12) >= 45:
+            d["last_attention_at"] = now
+            self._attend(node, now, reason="typing")
+            self._behavior("attend", now)
+            self._gesture("imitate", now, strength=.22 + .2 * level, target_id=d["attention"])
+            d["ethology"]["last_imitated_at"] = now
+            return True, True
+        return True, False
+
+    def _queue_activity_gap(self, target_id, now, observed_at):
+        policy = self.data["ethology"]["activity"]
+        if now >= policy["rest_until"] and now < policy["episode_until"]:
+            policy["gap_due_at"] = max(now + .4, observed_at + 2.5)
+            policy["gap_deadline"] = now + 18
+            policy["gap_target_id"] = target_id
+
+    def _activity_tick(self, now):
+        """One small interlude after an actual bout, never synthetic training."""
+        d, policy = self.data, self.data["ethology"]["activity"]
+        for name in ("typing", "microphone"):
+            channel = policy[name]
+            if channel["gap_pending"] and now >= channel["until"]:
+                channel["gap_pending"] = False
+                if now - channel["last_at"] <= 30:
+                    node = next((n for n in d["nodes"] if n["label"].casefold() == name), None)
+                    self._queue_activity_gap(node["id"] if node else None, now, channel["last_at"])
+        gap_due = policy["gap_due_at"]
+        if gap_due and now >= gap_due:
+            policy["gap_due_at"] = 0.
+            busy = any(now < policy[name]["until"] for name in ("typing", "microphone"))
+            if (not busy and now <= policy["gap_deadline"] and now < policy["episode_until"]
+                    and now >= policy["rest_until"] and now - policy["last_gap_at"] >= 75):
+                policy["last_gap_at"] = now
+                policy["wake_until"] = min(policy["episode_until"], now + 16)
+                d["last_attention_at"] = now
+                node = self._node(policy["gap_target_id"])
+                if node:
+                    self._attend(node, now, reason="between-bouts")
+                self._behavior("inspect", now)
+                self._gesture("tendril-inspect", now, strength=.3 + d["traits"]["playfulness"] * .25,
+                              target_id=d["attention"])
+                self._motion("explore", now, 12 + d["traits"]["playfulness"] * 8, .3, d["attention"])
+        return now < policy["wake_until"] and now < policy["episode_until"] and now >= policy["rest_until"]
+
+    def _perception_state(self):
+        """Expose recent coarse observations without stale presence claims."""
+        now, policy = self.data["server_time"], self.data["ethology"]["activity"]
+        result = {}
+        for name in ("typing", "microphone"):
+            channel = policy[name]
+            age = max(0., now - channel["last_at"])
+            result[name] = {"recent": age <= 30, "active": now < channel["until"],
+                            "level": channel["level"] if age <= 30 else 0.}
+        for name in ("pointer", "desktop"):
+            summary = policy[name]
+            result[name] = ({key: value for key, value in summary.items() if key != "observed_at"}
+                            if summary and 0 <= now - summary["observed_at"] <= 45 else None)
+        result["interlude"] = (0 <= now - policy["last_gap_at"] < 16)
+        return result
 
     @staticmethod
     def _novelty(node, now):
@@ -484,7 +620,9 @@ class Organism:
                 probability = max(probability, interest)
             else:
                 probability = 0.
-        responds = (strength > 0 and (not typing_cue or typing_eligible)
+        activity_managed, activity_response = self._observe_activity(event, node, now, observed_at)
+        responds = (activity_response if activity_managed else
+                    strength > 0 and (not typing_cue or typing_eligible)
                     and self.rng.random() < probability)
         explicit_drag = current and kind == "drag" and event.get("x") is not None and event.get("y") is not None
         if explicit_drag:
@@ -494,7 +632,7 @@ class Organism:
             responds = strength > 0
         d["last_responded"] = bool(responds)
         d["visible_responses"] += int(responds)
-        if responds:
+        if responds and not activity_managed:
             d["last_attention_at"] = now
             if kind in ("poke", "drag"):
                 d["ethology"]["survey_until"] = 0.
@@ -516,12 +654,12 @@ class Organism:
                 self._behavior("attend" if strength > .32 else "settle", now)
         # Sparse, systematic topic + affect + aspect; learned surprise and habit
         # influence both the probability and the chosen symbols.
-        if responds and now - d["last_utterance_at"] >= 9 and lat["symbolic_charge"] > .5:
+        if responds and not activity_managed and now - d["last_utterance_at"] >= 9 and lat["symbolic_charge"] > .5:
             if self.rng.random() < .25 + surprise * .35:
                 topics = {"poke": 4, "drag": 4, "git": 3, "activity": 3, "time": 5, "presence": 1, "context": 2}
                 affect = 9 if strength > .65 else 8 if novelty > .5 else 10
                 self._speak(topics.get(kind, 2), affect, now, 17 if novelty > .7 else 16)
-        if responds and typing_eligible:
+        if responds and typing_eligible and not activity_managed:
             self._gesture("imitate", now, strength=.2 + .3 * strength, target_id=d["attention"])
             d["ethology"]["last_imitated_at"] = now
         devices = {item["id"]: item for item in d["devices"]}
@@ -605,6 +743,8 @@ class Organism:
         lat["sleepiness"] = clamp(lat["sleepiness"] + dt * (-.0006 if d["behavior"] in ("sleep", "dream") else .0015))
         lat["curiosity"] = clamp(lat["curiosity"] + dt * (.0007 if quiet > 15 else -.0001))
         lat["symbolic_charge"] = clamp(lat["symbolic_charge"] + dt * .0015)
+        activity_awake = self._activity_tick(now)
+        quiet = now - d["last_attention_at"]
         sleeping = d["behavior"] in ("sleep", "dream")
         motives = d["motives"]
         motives["exploration"] = clamp(motives["exploration"] + dt * (
@@ -644,10 +784,11 @@ class Organism:
                     self._behavior("dream", now)
                     if now - d["last_utterance_at"] > 70 and lat["symbolic_charge"] > .65:
                         self._speak(15, 10, now, 6)
-        elif policy["survey_until"] and now >= policy["survey_until"]:
+        elif policy["survey_until"] and now >= policy["survey_until"] and not activity_awake:
             policy["survey_until"] = 0.
             self._behavior("sleep", now)
-        elif not policy["survey_until"] and quiet > 35 and lat["sleepiness"] > .35 and self.rng.random() < .045 * dt:
+        elif (not activity_awake and not policy["survey_until"] and quiet > 35
+              and lat["sleepiness"] > .35 and self.rng.random() < .045 * dt):
             self._behavior("sleep", now)
             self._gesture("yawn", now, strength=.4)
         elif d["behavior"] == "idle" and quiet > 14 and age > 7 and self.rng.random() < (.015 + motives["exploration"] * .03) * dt:
@@ -676,6 +817,7 @@ class Organism:
         d["attention_detail"] = {"reason": d["ethology"]["attention_reason"],
                                  "linger_until": d["ethology"]["linger_until"],
                                  "revisits": d["ethology"]["revisits"]}
+        d["perception"] = self._perception_state()
         d.pop("ethology", None)
         return d
 

@@ -36,6 +36,7 @@ WorkingDirectory={str(root).replace('%','%%')}
 ExecStart={' '.join(quote(p) for p in command)}
 Environment=PYTHONUNBUFFERED=1
 Environment=TERMINUS_SERVICE={role}
+Environment=OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
 Restart=always
 RestartSec=3
 NotifyAccess=main

@@ -14,7 +14,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-from PyQt5 import QtCore,QtGui,QtWidgets
+from PySide6 import QtCore,QtGui,QtWidgets
 from desktop.animation import ClipLibrary,ClipPlayer,AnimationFrame
 from desktop.skin import SkinAtlas,SkinEngine,rgba
 

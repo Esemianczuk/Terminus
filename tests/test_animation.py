@@ -7,7 +7,7 @@ import struct
 import tempfile
 import unittest
 
-from PyQt5 import QtGui
+from PySide6 import QtGui
 
 from desktop.animation import ClipError, ClipLibrary, ClipPlayer
 

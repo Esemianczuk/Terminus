@@ -1,54 +1,55 @@
 # Terminus, present on the desktop
 
-The native companion is a translucent, frameless, always-on-top PyQt5 window. It stays present independently of the browser. Its body and ephemeral graph appear directly over your applications, with no permanent panel, floor or status bar.
+The companion is a translucent, frameless, always-on-top PySide6 window. Qt Quick renders his body, skin and graph through Qt 6's Rendering Hardware Interface. He stays on the desktop independently of the browser.
 
 From the repository root:
 
 ```sh
-uv sync --extra test --extra desktop
-uv run python scripts/desktopctl.py start
+uv run python scripts/setup.py
 uv run python scripts/desktopctl.py status
-uv run python scripts/desktopctl.py stop
 ```
 
-The launcher starts the local core only if needed, then detaches the native body so it stays running after the terminal closes. It verifies a real exposed desktop window connected to the core before reporting success. Starting again reuses the same resident process. Stop/restart validates PID, process start time, boot identity, ownership, exact script and checkout; it never stops the organism core. `--scale 1.2` selects a larger starting size.
+Setup installs the local environment, native services, login startup and **Bring Back Terminus** shortcut. Linux uses systemd user services; macOS uses per-user launch agents. The launchers verify an exposed, connected native window before reporting success. Starting again reuses the resident process, with one body per private data directory. [Startup and recovery](../docs/SERVICE_RECOVERY.md).
 
-A real graphical session and PyQt5 are required. On the current X11 desktop the launcher explicitly selects Qt's `xcb` backend, rather than inheriting a test's offscreen setting. Wayland behavior depends on compositor support for always-on-top windows and positioning.
+## Body and graphics
 
-## Presence and interaction
+The approved GIFs remain source key poses. Offline tools pack them into texture atlases with bidirectional optical flow and eye masks. The GPU shader interpolates adjacent poses and applies skin coloration without running optical flow, image generation or NumPy shading in the live frame loop. Facing still mirrors instantly. Idle, moving, sleep and typing loops retain their phase; takeoff, landing, waking, settling and touch remain finite sequences. [Animation pipeline](../docs/GIF_ANIMATION.md).
 
-- The graph uses actual core nodes, edges, activation and attention. Branches softly emerge, pulse and fade; some remain faint under him as a resting surface.
-- Procedural tendrils extend from the bitmap body toward the attention region and active nodes, curling over the graph. They express shared state; they are not an independent organism model.
-- Actual transparent GIF loops maintain idle, moving, sleep and typing states. Short GIF clips handle takeoff, landing, waking, settling, pokes, stretches and yawns. Direction changes instantly mirror the current frame without a turning effect. A decoded frame is drawn directly; loops keep their phase across core updates. The old live body mesh and pose crossfades are removed. [Clip details and local authoring](../docs/GIF_ANIMATION.md).
-- He makes bounded, accelerating excursions along the monitor's edges, settles while resting, and pauses roaming while hovered, dragged, using a menu, or receiving stale/degraded state. You can pause roaming or enable reduced motion explicitly.
-- Click the creature to poke. Drag to move the whole presence: he banks into actual movement, trails his arms and settles on release. He instantly flips left/right with movement or gaze; **Look** also offers explicit Left, Right and Automatic controls. Alt-drag changes his position within the shared graph. Some window managers reserve Alt-drag; their modifier shortcut may take precedence.
-- Right-click the body or use the tray icon for roaming, reduced motion, size, monitor, position, observatory and quit controls. These view preferences persist privately in `.local/desktop.ini`; explicit `--scale` overrides saved size.
-- Empty transparent regions are click-through. The input shape follows the rendered body, visible graph and tendrils. Status appears only on hover, briefly after changes, or when disconnected.
+Qt chooses an available hardware backend, such as Metal on macOS or OpenGL on X11. The scene, baked shader package and immutable textures can be reused by a future mobile shell. This repository currently installs desktop apps on Linux and macOS; it does not ship Android or iOS apps.
 
-The default canvas is 440×340 logical pixels, most of it transparent. The visible creature occupies roughly 190–200 pixels and carries its network with it. A per-data-directory lock prevents duplicate native bodies; smoke tests do not acquire the resident lock.
+The normal GPU path uses timing metadata instead of decoding every GIF frame into the live image cache. Only the selected clip's textures and bounded source-alpha hit masks are needed. Graph nodes, curves, pulses, tendrils and inscriptions are scene-graph items. A shared glow texture replaces repeated CPU gradient allocation. Native hit testing uses artwork alpha and local curves, without GPU readback or desktop capture.
 
-The web habitat at `http://127.0.0.1:8769` remains available as an observatory and phone view. Quitting a browser does not remove the desktop body. Quitting the body does not erase learning.
+Frame pacing follows activity: quiet sleep uses four updates per second, quiet wakefulness eight, gestures or roaming about fifteen, and direct handling up to twenty. Reduced motion holds the body and material still. Stale or degraded core state freezes autonomous motion and effect phase.
 
-The body sends low-frequency observations of its own visible/exposed habitat and coarse local time. These indicate a running habitat. **Notice windows and typing** adds local X11 active-window geometry and aggregate keyboard activity, with an optional event-only AT-SPI text anchor. It can look toward your work, sometimes perch beside a window during exploration, and occasionally imitate actual typing. No titles, text, individual key identities or screenshots are read. Turn the feature off in the menu or use `--no-awareness`; see [the exact scope and fallbacks](../docs/DESKTOP_AWARENESS.md). Automatic observations are never queued during an outage.
+If hardware initialization, shader loading or the native input shape fails, the body falls back to cached raster sprites without procedural skin shading or flow interpolation. Repeated early graphics failures latch that fallback across restarts instead of retrying a broken driver indefinitely. `--renderer raster` also selects it explicitly. Diagnostics report the actual backend and error.
 
-## Runtime evidence
+## Interaction and attention
 
-`.local/desktop-status.json` records the native process, exposed/visible state, X11 platform, window flags, bounds, core revision, graph/tendril counts and roaming state. `.local/desktop-presence.png` is a capture of the companion's own window after it is exposed and connected; it does not capture the surrounding desktop or other applications. Logs and runtime files are ignored by Git.
+- Click to nudge; drag to carry. Alt-drag changes his position within the organism graph. Some window managers reserve Alt-drag for their own use.
+- Right-click or use the tray for size, monitor, position, roaming, reduced motion, facing, graph visibility, skin, observation and quit controls.
+- Empty space passes clicks through. The window does not accept keyboard focus; the GPU child has no input handlers or focus scope. The context menu has ordinary temporary menu interaction.
+- The graph projects actual core nodes, associations, activation and attention. Supporting limbs grip selected nodes. Moving lights express graph activity; their timing is visual expression, not a trace of every calculation.
+- Roaming stays within monitor bounds and pauses for rest, hover, dragging, menus or stale state. View movement never generates synthetic training events.
 
-For foreground development or an offscreen check:
+View preferences live separately in `.local/desktop.ini`. The default transparent canvas is 440 by 340 logical pixels. Explicit `--scale` overrides saved size. Quitting the body leaves the private organism database intact.
+
+## Read-only surroundings
+
+**Notice windows and typing** enables a disposable observer process. The GUI reads its bounded cache; OS or audio-server queries never run in the GUI loop. A stalled observer becomes unavailable and is terminated with bounded cleanup. It cannot inject input, grab the keyboard, activate another app, request accessibility access or open an audio stream.
+
+X11 supplies window bounds, pointer motion and aggregate raw-keypress counts without key identities. macOS supplies on-screen window geometry and cursor position; aggregate typing pulses require an existing Input Monitoring grant, checked without requesting permission. Linux can query microphone-use metadata through `pactl`; no audio is recorded. Mac microphone-use metadata and native Wayland observation are unavailable. No titles, text, screenshots or accessible text anchors are read.
+
+Window rectangles and pointer geometry remain in the local renderer. Only rate-limited fixed activity labels and coarse intensity reach the private core. Sustained typing or microphone use can invite a waking visit; a pause can invite a short inspection. Hard visit budgets and cooldowns preserve rest. The optional public learner sees only the broad event category `activity`. [Observation boundaries](../docs/DESKTOP_AWARENESS.md) and [behavior](../docs/ETHOLOGY.md).
+
+## Diagnostics and development
+
+`.local/desktop-status.json` records native visibility, exposure, freshness, focus eligibility, organism identity, graphics backend, scene-graph readiness, frame count, cache sizes and submission cost. `.local/desktop-presence.png` captures only this companion window. Neither file captures other applications.
 
 ```sh
 uv run python desktop/overlay.py
+uv run python desktop/overlay.py --renderer raster --no-awareness
 uv run python desktop/overlay.py --smoke-test
-uv run python -m pytest -q tests/test_overlay.py tests/test_desktopctl.py
+uv run --extra test --extra desktop python -m pytest -q
 ```
 
-The offscreen check tests network and rendering paths; it is distinct from the resident launcher's verification of an exposed desktop window. Assets are watched for updates; missing/corrupt GIFs have deterministic clip or approved-PNG fallbacks, reported in native diagnostics. Bearer authentication remains local and redirects cannot forward its token. No login autostart is installed automatically.
-
-`uv run python scripts/render_motion_study.py --output-dir work/motion-study` produces labelled, isolated gesture fixtures for visual review. These are controlled renderer studies, not live autonomous behavior or desktop screenshots.
-
-`uv run python scripts/render_clip_study.py` exercises the current GIF state player through its loops and transitions. Right-click **Graph visibility** for Subtle, Clear or Bright; Bright is the default.
-
-## Persistent startup and recovery
-
-Run `uv run python scripts/servicectl.py install` after initializing the runtime. The core and native body become user services with automatic restart, event-loop watchdogs and login restoration. The existing `desktopctl.py` and `termctl.py` commands then control these services. See [service recovery](../docs/SERVICE_RECOVERY.md) for logs, reboot behavior and intentional stop/disable commands.
+An offscreen smoke test checks the raster/network path. It does not verify hardware rendering or native desktop exposure. The isolated Xvfb typing test checks focus continuity around touch, drag and menus on its own synthetic display, without sending input to the live desktop. Platform runtime checks remain separate.

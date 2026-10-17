@@ -31,6 +31,7 @@ class OverlayTests(unittest.TestCase):
     def widget(self, directory=None, scale=None):
         client = OVERLAY.CoreClient("http://127.0.0.1:8769", directory or Path("/unused-test-data"))
         widget = OVERLAY.Overlay(client, ROOT / "web" / "assets", scale)
+        widget.reference_renderer = True  # Explicit CPU reference fixtures, never the production path.
         self.addCleanup(widget.close)
         return widget
 
@@ -607,7 +608,7 @@ class OverlayTests(unittest.TestCase):
             def start(self):
                 lifecycle.append("awareness-start")
             def snapshot(self):
-                self.fields["caret_provider"](None)
+                if "caret_provider" in self.fields:raise AssertionError("Retired caret reader must not be started")
                 return {"available": False, "enabled": True, "observed_at": time.monotonic()}
             def close(self, timeout=1.):
                 lifecycle.append("awareness-close")
@@ -623,10 +624,10 @@ class OverlayTests(unittest.TestCase):
                 self.assertEqual(lifecycle, [])
             with patch.dict(os.environ, {"DISPLAY": ":fixture", "XDG_SESSION_TYPE": "x11", "WAYLAND_DISPLAY": ""}):
                 widget.start_awareness()
-                self.assertIsInstance(widget.caret_provider, Caret)
+                self.assertIsNone(widget.caret_provider)
                 self.assertIsInstance(widget.awareness_provider, Awareness)
                 widget.close()
-        self.assertEqual(lifecycle, ["caret-start", "awareness-start", "awareness-close", "caret-close"])
+        self.assertEqual(lifecycle, ["awareness-start", "awareness-close"])
 
     def test_animation_scheduler_is_quiet_at_rest_and_smooth_during_actions(self):
         widget = self.widget()

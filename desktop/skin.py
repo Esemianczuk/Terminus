@@ -15,7 +15,7 @@ from pathlib import Path
 import time
 
 import numpy as np
-from PyQt5 import QtCore, QtGui
+from PySide6 import QtCore, QtGui
 
 LUMA = np.array([.2126, .7152, .0722], dtype=np.float32)
 
@@ -23,7 +23,7 @@ LUMA = np.array([.2126, .7152, .0722], dtype=np.float32)
 def rgba(image):
     """Own the array; never borrow writable storage from the shared GIF cache."""
     converted = image.convertToFormat(QtGui.QImage.Format_RGBA8888)
-    bits = converted.bits(); bits.setsize(converted.sizeInBytes())
+    bits = converted.bits()
     return np.frombuffer(bits, np.uint8).reshape(converted.height(), converted.bytesPerLine())[:, :converted.width()*4].reshape(converted.height(), converted.width(), 4).copy()
 
 

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 import cv2
 import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 from build_animation_clips import FrameAuthor, SOURCES, SPECS, WIDTH, HEIGHT, ROOT
 
 # Normalized, hand-traced eye regions include pupils, whites and dark rims.

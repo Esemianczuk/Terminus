@@ -1,85 +1,91 @@
 # Startup and automatic recovery
 
-On Linux, Terminus runs as two systemd **user** services:
-
-- `terminus-core.service` owns the persistent organism, local SQLite database and authenticated loopback port 8769.
-- `terminus-desktop.service` owns the native transparent window. It waits for an available graphical session, then replaces its session gate with the real Qt application at the same service PID.
-
-Both use `Restart=always`, a three-second restart delay, and unlimited restart attempts. `WatchdogSec=45` detects a process that remains alive but stops responding. The core sends watchdog messages from its asyncio ticker only while its health diagnostics are OK. The desktop sends them from Qt's own status timer while its native window is visible. A separate health thread cannot conceal a frozen event loop. A watchdog failure requests termination; systemd can force-stop after a further 15 seconds if graceful termination fails.
-
-The units are independent after startup. Desktop connection failures use the existing reconnect logic; they do not repeatedly restart an otherwise responsive body. A core restart reloads the same organism and the desktop reconnects. Core memory and all visual features are retained.
-
-## Desktop shortcut and presence guardian
-
-**Bring Back Terminus** on the desktop (also in the applications menu) starts and enables both services and the presence timer, refreshes the graphical session, and confirms that his native body is visible and connected before showing a small notification. Healthy processes are left running. If necessary, a manual click can restart an unresponsive component. The shortcut uses the approved Terminus artwork as its icon.
-
-`terminus-presence.timer` runs a quiet, bounded `terminus-presence.service` check about every 30 seconds. It restores enabled services that have ended up inactive or failed, supplementing crash restart and event-loop watchdogs. It verifies checkout ownership and respects explicit Quit/stop markers and disabled units. Clicking the shortcut or signing in resumes those paused components.
-
-## Install and use
-
-From an initialized checkout with its existing `.local/organism.sqlite3`:
+Terminus keeps the organism core and desktop body in separate user processes. Restarting the body does not replace the private model or erase memory. Setup and updates preserve `.local/organism.sqlite3` and the pairing token.
 
 ```sh
-uv run python scripts/servicectl.py install
+uv run python scripts/setup.py
 uv run python scripts/servicectl.py status
 ```
 
-The installer creates the trusted executable desktop shortcut, an applications-menu entry, and the presence timer. It refuses to overwrite unrelated shortcut, user-service or autostart files. It gracefully hands off only processes whose exact identity the existing launchers can verify. It retains the private pairing token and SQLite database. On this workstation, a consistent SQLite backup was taken before installation and the database passed `PRAGMA quick_check`.
+Setup installs only this checkout's managed services and shortcuts. It refuses to overwrite unrelated units, launch agents or shortcuts. The native body requires a logged-in graphical session.
 
-After installation the existing commands delegate to systemd, preventing duplicate unmanaged processes:
+## Bring Back Terminus
 
-```sh
-uv run python scripts/desktopctl.py start
-uv run python scripts/desktopctl.py status
-uv run python scripts/desktopctl.py restart
-uv run python scripts/termctl.py status
-```
+The desktop shortcut starts and enables the core, body and presence guardian, refreshes session information where needed, and verifies a fresh, exposed, connected native window. Healthy processes stay running. Explicit Quit/stop markers are cleared by a deliberate start or login restoration. The shortcut uses the approved artwork as its icon.
 
-Or use systemd directly:
+The quiet guardian checks about every thirty seconds. It respects intentional pauses and verifies checkout ownership before changing a process. An active service alone is not proof of a visible creature: native heartbeat freshness, exposure, connection and process identity matter too. A whole-system failure still needs the operating system and graphical session to recover first.
+
+## Linux
+
+`terminus-core.service` owns the authenticated loopback API on port 8769 and SQLite memory. `terminus-desktop.service` owns the native body. Both are systemd user services with `Restart=always`, a three-second delay and an event-loop watchdog. The desktop waits quietly for a usable graphical session; it does not launch a hidden offscreen body as a substitute.
+
+`WatchdogSec=45` detects a live process whose real event loop has stalled. The core reports health from its asyncio ticker, and the body from its Qt status timer. A separate health thread cannot hide a frozen loop. Normal reconnect logic handles a core restart without repeatedly restarting a responsive desktop.
+
+`terminus-presence.timer` runs a bounded guardian in addition to crash restart and watchdogs. A managed XDG login entry refreshes an allowlist of session/display connection variables, without copying the shell environment or pairing token. This also supports desktops whose `graphical-session.target` is inactive. Starting before graphical login depends on the user's systemd manager and any separately configured lingering; no system-wide service is installed.
 
 ```sh
 systemctl --user status terminus-core.service terminus-desktop.service
 journalctl --user -u terminus-core.service -u terminus-desktop.service -f
 ```
 
-Logs now go to the user journal. Old `.local/core.log` / `desktop.log` files remain as historical logs. The latest `.local/desktop-status.json` still reports real native presence, connection, organism identity, GIF backend, skin state and rendering diagnostics.
-
-## Login, reboot and logout
-
-Both application units are enabled under the user manager's `default.target`. User lingering is already enabled on this workstation: the core can start at boot before graphical login. The desktop waits quietly for a usable display and continues feeding its watchdog while waiting.
-
-Budgie's `graphical-session.target` is inactive here, so startup does not depend on that target. A managed XDG autostart entry, `~/.config/autostart/terminus.desktop`, refreshes the graphical session metadata and restores the desktop service at login. Its helper saves only an allowlist of display/session connection variables to a private file; it never copies the shell environment wholesale or saves the organism's pairing token there. X11 availability is checked by opening and closing a display connection without requesting screen contents. Session loss or a compositor/display restart causes the native process to exit or freeze; normal restart/watchdog handling restores it once the display is usable.
-
-Startup settings were installed and verified without rebooting the workstation or ending the user's session. A whole-system failure still needs the operating system to recover before a service can run.
-
-## Intentionally stopping him
-
-Unexpected exits, including a clean process exit, recover automatically. An explicit service stop is respected:
-
-```sh
-uv run python scripts/desktopctl.py stop   # body stops; core retains its life
-uv run python scripts/servicectl.py stop   # stop both until a start or next login
-uv run python scripts/servicectl.py start
-```
-
-**Quit desktop companion** in the native menu intentionally stops its unit, so the menu remains usable under automatic restart. To keep Terminus off across future logins and user-manager starts:
-
-```sh
-uv run python scripts/servicectl.py disable
-```
-
-This disables/stops both application units and the presence timer and removes only the managed login bridge. The desktop shortcut remains available to bring him back. It leaves all learned state intact. Run `install` again to re-enable persistent startup. `--part core` or `--part desktop` restricts a control operation to that component; starting the desktop also requests its core dependency.
-
-## Verification
-
-Unit files are checked by the workstation's own systemd parser before installation. Automated tests cover watchdog ownership, degraded health, private session metadata, native heartbeat validity, service routing and refusal to replace unrelated files. Runtime recovery checks target only verified Terminus service PIDs: a killed desktop, an unexpected core termination and a frozen desktop event loop must all return to an exposed, connected native body with the original organism identity and retained learning counters. No synthetic activity is inserted into the creature's history.
+Current service logs go to the user journal. Older `.local/core.log` and `.local/desktop.log` files may remain as historical logs.
 
 ## macOS
 
-Run `uv run python scripts/setup.py` from a checkout while signed into the desktop. The installer creates per-user launch agents `org.terminus.core`, `org.terminus.desktop` and `org.terminus.presence`, plus **Bring Back Terminus.app** on the desktop. The core and body have launchd KeepAlive enabled. A separate guardian checks every 30 seconds and restarts a stalled core or native heartbeat. This requires a logged-in GUI session; the desktop cannot appear before login.
+Run setup while signed into the Mac desktop. It creates `org.terminus.core`, `org.terminus.desktop` and `org.terminus.presence` under the user's LaunchAgents directory, plus **Bring Back Terminus.app** on the desktop. The core and body use launchd KeepAlive. The separate guardian checks core health and the native heartbeat every thirty seconds. These are per-user GUI agents; the body cannot appear before login.
 
-The same `scripts/servicectl.py` commands route to launchd on macOS. Explicit stop and Quit markers are respected. The recovery shortcut resumes the creature and verifies a fresh, exposed, connected native body. It leaves a healthy process alone. Logs are `.local/macos-core.log`, `.local/macos-desktop.log` and `.local/macos-presence.log`. Private memory stays in `.local/organism.sqlite3`.
+The same `scripts/servicectl.py` commands route to launchd. Logs are `.local/macos-core.log`, `.local/macos-desktop.log` and `.local/macos-presence.log`. The Cocoa panel is nonactivating and has no key/main-window eligibility; diagnostics report its actual focus state. Numerical-library thread pools are limited to one thread in the launch agents.
 
-The optional collective exchange adds `org.terminus.collective`, a ten-minute launch agent. It only accesses its category model and contribution outbox. It does not open the local API to other computers. Use `scripts/update.py` on either platform to back up memory, pull GitHub and rebuild the installed services.
+The optional collective exchange adds `org.terminus.collective`, a ten-minute agent. It uses only the separate category model and contribution outbox and does not expose the local API to other computers.
 
-The Mac body configures its Cocoa panel before showing it, with nonactivating mouse interaction and no key/main-window eligibility. Native focus eligibility is reported in `desktop-status.json`. Quiet animation is capped at eight frames per second, or four during sleep, while direct interactions can use twenty. Each Terminus launch agent limits numerical-library thread pools to one thread. Skin shading touches only painted pixels outside the protected eyes and keeps its cache bounded.
+## Graphics failure and a quieter fallback
+
+The normal Qt 6 RHI scene uses hardware rendering, offline flow textures and a GPU skin shader. If hardware setup, shader loading or native input shaping fails, the desktop selects cached raster GIF/PNG drawing. This compatibility path omits flow interpolation and procedural skin coloring. It preserves the creature, private memory, graph and direct interactions.
+
+Before a GPU startup, a private `.local/.render-guard.json` marker records the attempt. Fifteen continuous seconds of visible, exposed, connected, fresh, actually rendered native frames clear a successful attempt. Two consecutive early failures within ten minutes latch raster mode across later starts. A detected initialization failure also latches raster immediately. A healthy raster restart does not clear the latch and reenter a graphics crash loop.
+
+Use the simpler renderer explicitly for foreground diagnosis:
+
+```sh
+uv run python scripts/desktopctl.py stop
+uv run python desktop/overlay.py --renderer raster --no-awareness
+```
+
+Stop that foreground process before starting the resident body again. After resolving a graphics problem, a deliberate hardware retry is:
+
+```sh
+uv run python scripts/desktopctl.py stop
+uv run python -c 'from pathlib import Path; Path(".local/.render-guard.json").unlink(missing_ok=True)'
+uv run python scripts/desktopctl.py start
+```
+
+Run those commands from the intended checkout. Removing this renderer marker does not remove memory. It permits another graphics attempt, so retain the fallback if the underlying driver problem remains.
+
+## Observation and keyboard boundaries
+
+The native window and its GPU child do not accept keyboard focus. A disposable process performs read-only OS metadata queries; the GUI never waits synchronously for those queries. The observer has no API to inject or grab input, activate apps, request accessibility access or open an audio stream. Stale or malformed output is discarded and a stalled child is terminated with bounded cleanup. Observation can be disabled from the menu or with `--no-awareness`.
+
+On macOS, aggregate typing requires an existing Input Monitoring grant; Terminus only checks it and never requests access. Linux microphone detection reads audio-server stream metadata and records no sound. No observer reads text, key identities, window titles or screenshots. These boundaries reduce the application's ability to interfere with input; they are not a guarantee against faults elsewhere in the OS, driver or desktop session.
+
+## Stop, restart and update
+
+```sh
+uv run python scripts/desktopctl.py stop
+uv run python scripts/servicectl.py stop
+uv run python scripts/servicectl.py start
+uv run python scripts/servicectl.py disable
+```
+
+A body-only stop leaves the core running. A deliberate stop is respected until a start or login restoration. Disable keeps the managed services off across later logins while leaving learned state and the recovery shortcut intact. Run setup again to reinstall startup. `--part core` or `--part desktop` restricts service operations to that component.
+
+```sh
+uv run python scripts/update.py
+```
+
+The updater makes a consistent SQLite backup, pulls with `--ff-only`, rebuilds the environment and restores the installed services. Local source changes stop the update without being discarded. Each machine retains its own organism identity and private learning.
+
+## Verification
+
+`.local/desktop-status.json` reports native exposure, freshness, focus flags, graphics backend, real frame count, input shape and memory/cache diagnostics. `.local/desktop-presence.png` captures only the companion window. Offscreen smoke tests validate a raster/network path and do not establish hardware or native desktop success.
+
+Tests cover process ownership, pause markers, event-loop watchdog health, graphics failure latching, observer validation and bounded cleanup. A separate synthetic Xvfb test checks typing through touch, drag and menus on its own display. Runtime recovery checks must target only verified Terminus PIDs and confirm the original identity and learning counters afterward. No synthetic activity should be inserted into the resident creature to demonstrate recovery.

@@ -8,7 +8,7 @@ import unittest
 
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import numpy as np
-from PyQt5 import QtCore,QtGui,QtWidgets
+from PySide6 import QtCore,QtGui,QtWidgets
 from desktop.animation import ClipLibrary,ClipPlayer,AnimationFrame
 from desktop.skin import SkinAtlas,SkinEngine,LAYERS,rgba,eye_field
 

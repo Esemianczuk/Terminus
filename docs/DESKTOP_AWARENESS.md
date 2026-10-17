@@ -1,28 +1,45 @@
-# Flight, looking and quiet imitation
+# Desktop awareness without taking input
 
-The native body uses actual drag/roaming to select takeoff and moving GIFs, with a small directional bank. Direction changes instantly mirror the current GIF frame, while the graph and inscriptions retain their world orientation. Release plays a landing clip into the appropriate resting loop. Right-click **Look** for Automatic, Left or Right; that choice persists with other private view preferences. Reduced motion holds the loop's first frame. [GIF playback details](GIF_ANIMATION.md).
+Terminus notices the rhythm of local activity. He does not receive text, images of other applications, window titles, clipboard contents, passwords, key identities or audio. The switch in his menu and `--no-awareness` disable this observation. Turning it off reaps its helper and stops current observations; it does not erase the creature's earlier learned history.
 
-Autonomous excursions still require a fresh core motion intent. Some exploration paths can pause beside the focused window's edge, with monitor bounds and a cooldown. The body looks toward a fresh accessible text anchor when available, otherwise toward the focused window. It does not understand or inspect the window's contents.
+The body never needs keyboard focus. His window is nonactivating, accepts no keyboard focus and has no keyboard shortcut registration. The observer cannot activate another application, select a text field, send input, change cursor position or acquire an input grab. Observation and the native window's focus policy are separate boundaries and are tested separately.
 
-## What the local observer reads
+## How observation is isolated
 
-**Notice windows and typing** is enabled for this requested feature on the real X11 desktop. The checkbox or `--no-awareness` disables it. Disabled, offscreen and unsupported Wayland runs do not start the X11 observer. Turning it off closes the observer and its optional accessibility helper; it does not erase learned organism history.
+All operating-system metadata calls run in one disposable child process. The renderer reads an in-memory snapshot, never waits for that process and never makes a keyboard IPC call while painting. The child runs at a lower CPU priority. It emits bounded JSON at most five times per second; the parent accepts only a fixed schema. Unknown fields, strings outside fixed enums, nonfinite numbers, stale timestamps and oversized messages are rejected. A silent or stalled child becomes unavailable after four seconds and is terminated. A child that ignores termination is killed by its owned PID. There is no automatic restart loop.
 
-- X11 contributes the active window's rectangle and whether it belongs to this native body. No title, application text, image, clipboard or file content is requested.
-- XInput2 contributes aggregate keyboard-activity counts in a bounded four-second in-memory ring. The code decodes only the generic event header, never key identities, keycodes or typed characters. Keyboard activity can include shortcuts; it does not prove that meaningful text was entered.
-- When system Python has `pyatspi`, a separate bounded helper listens only for focus/caret events. It queries the event source's focused/visible state, password role, caret offset and character geometry. It never requests text, names, titles, ancestor contents or a desktop accessibility-tree scan.
-- Accessibility geometry is labelled `glyph-edge`: the leading edge of the current glyph or the trailing edge of a preceding glyph at end-of-text. This is a text anchor, not a guarantee of the exact cursor pixel in every app, writing direction or ligature. Samples expire after 2.8 seconds. No position is invented when the app exposes none.
-- A known password source suppresses geometry and typing reactions. Without accessibility support, field sensitivity is unknown; the X11 observer still has only aggregate activity and window bounds, with no characters or key identities.
+The native body can continue breathing, roaming and learning from its existing organism when an observer is missing, denied permission or unavailable. Native Wayland currently has this fallback. Android and iOS need platform-specific, permission-respecting adapters in the future.
 
-Coordinates, activity rates and accessibility objects stay in the local renderer. At most once per 45 seconds of fresh actual activity, it may send the fixed label `activity:typing`, intensity 0.16, to the same authenticated core. There is no automatic outbox and nothing is replayed as current typing after an outage. Automatic observations cannot send a pairing token to a new destination.
+## What each platform can see
 
-## Why he sometimes copies you
+On X11, a private XCB connection reads the active window's rectangle and passive XInput2 raw-key-press event headers. The event reader copies only ten header bytes and never decodes a key identity or keycode. Passive selection does not own, suppress, replay or redirect keyboard events. This module binds no input-grab, focus-setting, event-injection or pointer-warp API. It does not open `/dev/input`.
 
-The authoritative core may choose a six-second `imitate` gesture after a recent real typing cue while awake and calm. Familiarity and learned surprise influence that choice, and a persisted 45-second cooldown prevents repeated gestures. Sleep, stale observations, zero intensity, manual labels and generic activity cannot trigger imitation. The body renders alternating tentacle taps only with a matching finite core gesture and fresh local keyboard activity; it eases out when activity stops.
+The X11 worker also queries cursor coordinates and a bounded set of normal mapped window rectangles on the current workspace. These rectangles are reduced to a coarse count, normalized bounds and clipped area estimate. It does not read application names or titles, identify controls, capture other applications or reconstruct their contents. The area estimate sums rectangles and clips at one; overlapping windows make it an approximation, not a measurement of visible pixels.
 
-This is a small explicit behavioral policy informed by a local recurrent predictor. It is not reading or predicting your text. The brighter graph remains the same actual associative network; a separate input layer preserves its previous click-through footprint.
+On macOS, CoreGraphics supplies cursor position and on-screen window geometry. The first normal window is a coarse inspection target, not a claim that an accessibility text field was located. No event tap, accessibility API or application activation is used. Keyboard rhythm uses an aggregate idle-time query only when Input Monitoring was already granted. The app checks existing permission and never requests or changes it. If permission is missing, pointer and geometry observation still work and keyboard awareness is explicitly unavailable. Window titles and owner names are never accessed. Normalized coordinates currently use the main display; precise gaze across mixed-DPI, multiple-monitor configurations remains approximate.
 
-The motion-study script renders labelled isolated fixtures for flight in both directions, turning, landing, window inspection and typing, in addition to the earlier gestures. Those fixtures do not access the live organism, observe other apps or prove autonomous runtime choices. Art prompts and original RGBA paths are recorded in [ART_DIRECTIONAL.md](ART_DIRECTIONAL.md).
+The former AT-SPI caret helper has been retired. It no longer starts a process or opens an accessibility text interface. The creature looks toward a window region, not a character position. This removes an unnecessary IPC dependency from typing interaction.
 
+On Linux, an optional 3-second poll of the audio server's short list of recording streams reports only whether a recording stream is already in use. This is a microphone-use hint, not voice detection: a stream may be silent or record a monitor source instead of a physical microphone. The query opens no recording stream, requests no audio permission, reads no sound samples and stores no application metadata. Output is capped at 64 KiB and the query has a 250 ms deadline. The macOS adapter reports microphone status unavailable rather than requesting microphone access.
 
-Window geometry is currently verified on this workstation at device pixel ratio 1.0. High-DPI and mixed-scale X11/Qt coordinate mapping is not yet normalized or validated. Native presence and keyboard-activity counting are distinct from that geometry limitation.
+## Activity, behavior and memory
+
+Typing is held as aggregate buckets in a four-second ring. A bout begins with activity, reaches a pause after 1.1 seconds without a pulse and expires to idle after eight seconds. A single key or shortcut cannot count as heavy use: the intensity requires sustained activity over at least 1.2 seconds. macOS idle timestamps produce coarser pulses than X11 event counts, so their intensity is an approximation.
+
+The private rendering snapshot contains these fixed shapes:
+
+```text
+typing: {active, last_at, rate, pulse, sequence} or unavailable
+bout: {phase: active|pause|idle, duration_s, level, pause_age_s, sequence}
+pointer: {available, x, y, motion}                 # normalized, coarse
+windows: {available, count, coverage, rects}      # at most eight rectangles
+microphone: {available, in_use}                  # no audio
+```
+
+Window and pointer geometry stay in the native body. The only observations sent to the authenticated local core are rate-limited activity cues with fixed contexts: `typing`, `typing-pause`, `pointer`, `microphone` and `desktop`. They use the existing event kind, source, intensity and timestamp fields. A cue describes fresh real activity; failed connections do not queue observations for replay as current activity.
+
+The private learner can associate these activity categories with quiet intervals and occasionally respond between bouts. It cannot infer what was typed or spoken. The public collective learner still sees only the seven fixed event kinds, so these cues all reduce to the same `activity` category before a public contribution is constructed. Private geometry, precise pointer paths, contexts and timestamps never enter that learner.
+
+## Verification
+
+The observer tests exercise bounded aggregates, sustained-bout thresholds, stale snapshots, schema rejection, passive API bindings, and retirement of the accessibility text helper. Separate child-process tests cover a silent worker, an oversized pipe and a worker that ignores termination. They verify that the renderer's snapshot calls remain responsive and only the owned child is reaped. Those checks do not prove that unrelated applications or operating-system bugs cannot disrupt input.

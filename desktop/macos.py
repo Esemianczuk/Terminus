@@ -1,6 +1,6 @@
 """Cocoa window behavior for the native body. No screen or keyboard capture."""
 import ctypes
-from PyQt5 import QtCore,QtGui
+from PySide6 import QtCore,QtGui
 
 
 class MacPresence:

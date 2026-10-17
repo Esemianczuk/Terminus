@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .store import Store
+from . import __version__
 from .supervision import notify
 
 
@@ -312,7 +313,7 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
                             await client.close(code=1001)
                     service.store.close()
 
-    app = FastAPI(title="Terminus", version="0.1.0", lifespan=lifespan,
+    app = FastAPI(title="Terminus", version=__version__, lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
@@ -340,7 +341,7 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
         diagnostics = app.state.service.diagnostics()
         if diagnostics["status"] != "ok":
             response.status_code = 503
-        return {"status": diagnostics["status"], "service": "terminus", "version": "0.1.0", "runtime": diagnostics}
+        return {"status": diagnostics["status"], "service": "terminus", "version": __version__, "runtime": diagnostics}
 
     @app.post("/api/pair")
     async def pair(body: Pair, request: Request, response: Response):

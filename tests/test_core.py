@@ -395,6 +395,135 @@ def test_background_typing_never_wakes_sleep_or_claims_stale_or_silent_activity(
         assert creature.data["last_responded"] is False
 
 
+def test_sustained_live_typing_wakes_without_replacing_private_learning_or_identity():
+    creature = Organism(seed=234, now=0)
+    identity = creature.data["organism_id"]
+    weights = creature.model.wx.copy()
+    creature.event(stimulus("work", kind="activity", context="typing", source="live", intensity=.65), 1)
+    assert creature.data["behavior"] == "attend"
+    assert creature.data["gesture"]["kind"] == "stretch"
+    assert creature.data["attention"] is not None
+    assert creature.state()["perception"]["typing"] == {"recent": True, "active": True, "level": .65}
+    creature.event(stimulus("more-work", kind="activity", context="typing", source="live", intensity=.65), 9)
+    assert creature.model.updates == 1
+    assert not np.array_equal(weights, creature.model.wx)
+    assert creature.data["organism_id"] == identity
+    assert creature.data["events_seen"] == 2
+
+
+@pytest.mark.parametrize("context", ["typing", "typing-pause", "microphone", "pointer", "desktop"])
+def test_old_or_reordered_passive_activity_cannot_claim_current_presence(context):
+    creature = Organism(now=100)
+    before = creature.data["latent"].copy()
+    creature.event(stimulus("old", kind="activity", context=context, source="live",
+                            intensity=.9, observed_at=1), 100)
+    assert creature.data["behavior"] == "sleep"
+    assert creature.data["gesture"] is None
+    assert creature.data["latent"] == before
+    assert creature.data["last_responded"] is False
+    assert creature.data["ethology"]["activity"]["gap_due_at"] == 0
+    assert creature.state()["perception"]["typing"]["recent"] is False
+    creature.event(stimulus("current", kind="activity", context="typing", source="live", intensity=.8), 101)
+    deadline = creature.data["ethology"]["activity"]["typing"]["until"]
+    creature.event(stimulus("reordered", kind="activity", context="typing-pause", source="live",
+                            intensity=.8, observed_at=99), 102)
+    assert creature.data["ethology"]["activity"]["typing"]["until"] == deadline
+
+
+def test_between_bouts_inspection_is_causal_finite_and_does_not_train_invented_events():
+    creature = Organism(now=0)
+    creature.event(stimulus("start", kind="activity", context="typing", source="live", intensity=.7), 1)
+    creature.event(stimulus("refresh", kind="activity", context="typing", source="live", intensity=.7), 9)
+    creature.event(stimulus("pause", kind="activity", context="typing-pause", source="live",
+                            intensity=.7, observed_at=10), 12)
+    updates, events = creature.model.updates, creature.data["events_seen"]
+    creature.tick(13)
+    assert creature.data["behavior"] == "inspect"
+    assert creature.data["gesture"]["kind"] == "tendril-inspect"
+    assert creature.data["motion"]["intent"] == "explore"
+    assert creature.data["motion"]["duration"] <= 20
+    assert creature.data["ethology"]["activity"]["last_gap_at"] == 13
+    assert creature.state()["perception"]["interlude"] is True
+    assert creature.model.updates == updates
+    assert creature.data["events_seen"] == events
+    creature.tick(35)
+    assert creature.state()["perception"]["interlude"] is False
+
+
+def test_new_typing_cancels_a_pending_interlude_and_repeated_pauses_have_a_cooldown():
+    creature = Organism(now=0)
+    def activity(index, context, now):
+        creature.event(stimulus(index, kind="activity", context=context, source="live", intensity=.7), now)
+    activity("start", "typing", 1)
+    activity("pause", "typing-pause", 3)
+    activity("resume", "typing", 4)
+    creature.tick(6)
+    assert creature.data["ethology"]["activity"]["last_gap_at"] < 0
+    activity("pause-again", "typing-pause", 7)
+    creature.tick(10)
+    assert creature.data["ethology"]["activity"]["last_gap_at"] == 10
+    activity("second-bout", "typing", 15)
+    activity("second-pause", "typing-pause", 19)
+    creature.tick(22)
+    assert creature.data["ethology"]["activity"]["last_gap_at"] == 10
+
+
+def test_activity_visits_have_a_hard_budget_rest_and_no_late_resume_animation():
+    creature = Organism(seed=7, now=0)
+    for now in range(1, 122):
+        if now % 8 == 1:
+            creature.event(stimulus(now, kind="activity", context="typing", source="live", intensity=.9), now)
+        creature.tick(now)
+    policy = creature.data["ethology"]["activity"]
+    assert policy["episode_until"] == 91
+    assert policy["wake_until"] <= 91
+    assert policy["rest_until"] == 136
+    # An overdue timer after sleep/restart must not reenact an old gap.
+    creature.event(stimulus("pause", kind="activity", context="typing-pause", source="live", intensity=.8), 122)
+    creature.tick(500)
+    assert policy["last_gap_at"] < 0
+    assert creature.state()["perception"]["typing"] == {"recent": False, "active": False, "level": 0.}
+    creature.event(stimulus("new-day", kind="activity", context="typing", source="live", intensity=.9), 501)
+    assert policy["episode_until"] == 591
+
+
+def test_microphone_usage_is_only_a_coarse_bounded_cue_and_passive_pointer_does_not_wake():
+    creature = Organism(now=0)
+    creature.event(stimulus("pointer", kind="activity", context="pointer", source="live",
+                            intensity=.9, x=.123, y=.91), 1)
+    creature.event(stimulus("desktop", kind="activity", context="desktop", source="live", intensity=.9), 2)
+    assert creature.data["behavior"] == "sleep"
+    assert creature.data["position"] == {"x": .5, "y": .62}
+    assert creature.state()["perception"]["pointer"] == {"level": .9}
+    creature.event(stimulus("mic", kind="activity", context="microphone", source="live", intensity=.45), 3)
+    assert creature.data["behavior"] == "attend"
+    assert creature.state()["perception"]["microphone"]["active"] is True
+    creature.event(stimulus("mic-off", kind="activity", context="microphone", source="live", intensity=0), 8)
+    creature.tick(11)
+    assert creature.data["behavior"] == "inspect"
+    assert creature.state()["perception"]["microphone"]["active"] is False
+    creature.tick(60)
+    assert creature.state()["perception"]["pointer"] is None
+    assert creature.state()["perception"]["desktop"] is None
+
+
+def test_activity_migration_and_restart_preserve_identity_model_rng_and_exact_policy():
+    creature = Organism(seed=12, now=0)
+    old = creature.dump()
+    del old["data"]["ethology"]["activity"]
+    restored = Organism(saved=old)
+    assert restored.data["organism_id"] == old["data"]["organism_id"]
+    assert restored.model.dump() == old["model"]
+    assert restored.dump()["rng"] == old["rng"]
+    restored.event(stimulus("start", kind="activity", context="typing", source="live", intensity=.7), 1)
+    restored.event(stimulus("pause", kind="activity", context="typing-pause", source="live", intensity=.7), 7)
+    resumed = Organism(saved=json.loads(json.dumps(restored.dump())))
+    for now in range(8, 151):
+        restored.tick(now)
+        resumed.tick(now)
+    assert restored.dump() == resumed.dump()
+
+
 def test_typing_gesture_is_finite_with_persisted_cooldown_and_exact_continuation():
     for seed in range(100):
         creature = Organism(seed=seed, now=0)

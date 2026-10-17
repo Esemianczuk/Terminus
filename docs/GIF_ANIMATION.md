@@ -1,25 +1,37 @@
-# GIF states and short transitions
+# Key poses, motion fields and short transitions
 
-The native body now plays real cached multi-frame GIFs. Idle, moving, sleep and typing are persistent loops. Takeoff, landing, waking, settling to sleep, poking, stretching and yawning are finite clips. Facing instantly mirrors the current frame without interrupting or resetting playback; the earlier turn GIF remains an unused reference asset. Repeated core snapshots do not restart a loop or replay a transition. Dragging can interrupt a gesture and start takeoff immediately, including when the core is asleep.
+The approved GIFs supply the native body's key poses and timing. Idle, moving, sleep and typing are persistent loops. Takeoff, landing, waking, settling, poking, stretching and yawning are finite sequences. Facing instantly mirrors the current pose without resetting playback. The unused turn sequence remains a reference asset; there is no turning dissolve. Repeated core snapshots do not restart a loop or replay a transition, and carrying can interrupt a gesture immediately.
 
-The graph remains a separate live view of actual memory. Graph contacts use registered clip anchors and facing; graph labels and inscriptions are never mirrored with the body. The default graph visibility is now **Bright**, with true 2.8× light gain and a higher minimum edge visibility. **Subtle / Clear / Bright** in the right-click menu persist with other view settings. Its unboosted input layer keeps the brighter glow from intercepting more desktop clicks.
+The graph remains a separate view of actual memory. Contacts use registered anchors and facing; graph geometry and inscriptions are never mirrored with the body. Subtle, Clear and Bright graph settings persist separately from memory. Bright is the default. Extra light does not enlarge the input shape.
 
-## Assets and authoring
+## Source assets
 
-`web/assets/clips/manifest.json` registers a common transparent 384×416 canvas, clip roles and graph anchors. There are 12 GIFs with 129 decoded frames, approximately 7.67 MB compressed and 78.6 MiB decoded. Each clip uses a fixed palette, a reserved transparent index, full-canvas disposal and explicit frame delays. No graph, background, text or keyboard is baked into the body.
+`web/assets/clips/manifest.json` registers twelve GIFs with 129 decoded key poses on a common transparent 384 by 416 canvas, finite/loop roles, delays and graph anchors. No graph, background, text or keyboard is baked into the body. Source hashes, delays, frame counts and authoring scope live in `web/assets/clips/provenance.json`. Eye registrations and source fingerprints live in `skin-atlas.json`.
 
-The existing approved clean PNG poses are the art sources. `scripts/build_animation_clips.py` authors registered pose, eyelid, fin and arm frames offline on the CPU, then encodes actual GIFs with Pillow. Its small image rig is a build tool; the resident body draws one decoded GIF frame and does not run the old mesh deformation or pose crossfades. The runtime applies position, small directional banking and an immediate whole-frame mirror when facing changes. A separate [procedural skin layer](LIVING_SKIN.md) colors the existing frames without changing their silhouette or eyes.
+The approved clean PNG poses remain the artwork source. `scripts/build_animation_clips.py` uses its small offline image rig to author eyelid, fin and arm poses and encode GIFs. The original downloads retain their earlier face and baked graph, so they remain references rather than being substituted into the clean-body renderer.
 
-On this workstation, `/usr/bin/python3 scripts/build_animation_clips.py` uses the already installed PyQt5 and Pillow. Alternatively, `uv run --with Pillow python scripts/build_animation_clips.py` provides the optional authoring dependency. The runtime does not require Pillow, a diffusion model, a GPU or an image-generation API. No Stable Diffusion installation or new GPU workload was needed. All downloaded originals and approved PNGs remain intact. Source and clip hashes, actual decoded delays/counts and authoring scope are recorded in `web/assets/clips/provenance.json`.
+## Offline motion, live GPU rendering
 
-The original downloaded idle/running GIFs retain their old face and baked planet graph, so they are preserved as source references rather than substituted into the new clean-body renderer.
+`scripts/build_gpu_assets.py` computes forward and reverse optical flow between adjacent key poses, with consistency confidence and bounded displacement. It packs body images and low-resolution motion/eye data into immutable atlases under `web/assets/gpu/`. Texture gutters isolate adjacent tiles. A source-hash mismatch stops construction. This is an offline CPU build, not a task run by the resident creature.
 
-## Playback boundaries
+`desktop/gpu.py` provides validated timing metadata to the existing monotonic clip player. The normal GPU path does not decode the whole GIF bank into its image cache. Qt Quick's scene graph draws the graph and supporting limbs; `desktop/shaders/body.frag` uses the atlas phase to warp and interpolate the neighboring body poses, then applies [eye-protected skin coloration](LIVING_SKIN.md). Pose endpoints retain the authored source sampling. The result is an approximate optical-flow morph, with uncertain motion attenuated rather than treated as anatomical knowledge.
 
-`desktop/animation.py` decodes GIFs once with Qt, caps frame count/duration/dimensions and total memory, validates paths inside the clip directory and rejects a static PNG renamed to GIF. The current cache uses 82,427,904 bytes of frame data, under the 96 MiB limit. Missing or corrupt optional clips fall back deterministically; an unusable bank uses the approved static PNG fallback, with diagnostics explaining the active backend.
+The shader is baked into a portable QSB package for Qt's graphics backends, including Metal and OpenGL. The scene and assets are suitable for reuse in a future mobile client, but this repository does not ship Android or iOS applications. Playback and material updates have one caller-controlled clock, with no QML animation timers or independent learner.
 
-One authoritative core still owns attention and behavior. The client chooses a visual loop from its state, actual carrying/roaming and fresh local observations. Typing remains gated by both the finite core imitation gesture and current activity. Reduced motion holds a first frame; stale/degraded core state freezes the last presented frame and does not accumulate a hidden animation backlog.
+```sh
+# Only needed after deliberately changing source art or registrations:
+uv run --extra art --extra desktop python scripts/build_animation_clips.py
+uv run --extra art --extra desktop python scripts/build_skin_atlas.py
+uv run --extra art --extra desktop python scripts/build_gpu_assets.py
+uv run --extra desktop python scripts/build_shaders.py
+```
 
-`uv run python scripts/render_clip_study.py` renders a labelled 22.889-second controlled preview using the real GIF player and native body renderer. It does not read the live organism, observe other apps or fabricate activity into history. Tests separately verify native input/state selection, persistent loops, finite transitions, interruption, instant facing, freezes and fallback behavior.
+Pillow and OpenCV are optional authoring dependencies. Normal installation uses the checked-in assets and does not need an art environment, diffusion model or image-generation API.
 
-Independent Pillow and Qt review verified every clip's frame count, timing, alpha and loop flags. No frame touches a canvas edge; graph anchors stay on opaque body pixels even during the narrow turn. Takeoff/landing endpoints match their adjacent loops, and loop seam differences remain comparable to ordinary frame steps. Transitions use discrete keyposes, without a translucent dissolve between different silhouettes.
+## Playback and failure boundaries
+
+One authoritative core owns attention, finite gestures and behavior. The client selects a visual sequence from that state, actual carrying/roaming and fresh local observations. Typing requires both a finite core imitation gesture and recent real activity. Reduced motion holds a source pose and static material. Stale or degraded state freezes phase without an animation backlog on reconnection.
+
+Native hit testing uses a bounded cache of source alpha and vector curves, without GPU readback or screen capture. Missing hardware, shader failure or unsupported input shaping selects the cached raster GIF/PNG renderer. That fallback omits flow and procedural color effects. The legacy decoder still validates paths, frame limits, dimensions, delays and total decoded memory before caching fallback frames. Repeated early graphics crashes latch fallback across restarts; [recovery instructions](SERVICE_RECOVERY.md) explain an explicit retry.
+
+Tests check clip phase, finite transitions, interruption, instant facing, source hashes, flow/atlas bounds, eye guards, exact endpoint sampling, stale/reduced-motion holds, input shaping and fallback. Controlled render studies are fixtures, not observations inserted into the live organism. Offscreen raster smoke tests do not establish hardware-renderer or native desktop success.

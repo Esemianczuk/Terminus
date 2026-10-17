@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Author registered transparent GIF clips offline from the approved body art.
 
-Run with a Python containing PyQt5 and Pillow (the workstation's /usr/bin/python3
+Run with a Python containing PySide6 and Pillow (the workstation's /usr/bin/python3
 has both), or: uv run --with Pillow python scripts/build_animation_clips.py
 No model, GPU, network service, live organism or screen capture is involved.
 The body renderer consumes these discrete frames; this rig is an asset tool.
@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]

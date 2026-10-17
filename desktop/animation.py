@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass, replace
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -16,7 +17,7 @@ import re
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from PyQt5 import QtGui
+from PySide6 import QtGui
 
 
 LOOP_STATES = ("idle", "moving", "sleep", "typing")
@@ -62,11 +63,14 @@ class AnimationFrame:
 class ClipLibrary:
     """Bounded GIF decoding once, then shared immutable frames for each view."""
 
-    def __init__(self, clips: Mapping[str, Clip], canvas, *, errors=None):
+    def __init__(self, clips: Mapping[str, Clip], canvas, *, errors=None,metadata_only=False):
         self.clips = MappingProxyType(dict(clips))
         self.canvas = tuple(canvas)
         self.errors = MappingProxyType(dict(errors or {}))
-        self.decoded_bytes = sum(image.sizeInBytes() for clip in clips.values() for image in clip.frames)
+        self.metadata_only = bool(metadata_only)
+        images = [image for clip in clips.values() for image in clip.frames]
+        self.decoded_bytes = (sum(image.sizeInBytes() for image in {image.cacheKey():image for image in images}.values())
+                              if self.metadata_only else sum(image.sizeInBytes() for image in images))
         if not any(name in self.clips for name in LOOP_STATES):
             raise ClipError("No usable animated idle, moving, sleep, or typing clip.")
 
@@ -122,6 +126,65 @@ class ClipLibrary:
             compressed_bytes += size
             used_bytes += sum(image.sizeInBytes() for image in clip.frames)
         return cls(clips, canvas, errors=errors)
+
+    @classmethod
+    def from_gpu_metadata(cls,path:Path|str,packed:Mapping[str,Any]):
+        """The same playback clocks, with one shared transparent canvas.
+
+        The content fingerprints and offline atlas metadata
+        replace GIF decoding. Presentation must obtain pixels from the GPU atlas
+        or its bounded CPU hit-test crop; these placeholders are never artwork.
+        """
+        path=Path(path)
+        try:
+            if path.stat().st_size>64*1024:raise ClipError("Clip manifest is too large.")
+            manifest=json.loads(path.read_text())
+        except (OSError,ValueError,UnicodeError) as exc:
+            raise ClipError("Cannot read clip metadata.") from exc
+        if not isinstance(manifest,dict) or not isinstance(packed,Mapping):
+            raise ClipError("Invalid GPU clip metadata.")
+        canvas=manifest.get("canvas")
+        if (manifest.get("version")!=1 or packed.get("version")!=1 or canvas!=packed.get("canvas")
+                or not isinstance(canvas,list) or len(canvas)!=2
+                or any(type(value) is not int or not 1<=value<=1024 for value in canvas)):
+            raise ClipError("GPU and source clip canvases do not match.")
+        entries=manifest.get("clips");registered=packed.get("clips")
+        if not isinstance(entries,dict) or not 1<=len(entries)<=16 or not isinstance(registered,dict) or set(entries)!=set(registered):
+            raise ClipError("GPU and source clip roles do not match.")
+        placeholder=QtGui.QImage(*canvas,QtGui.QImage.Format.Format_ARGB32_Premultiplied)
+        placeholder.fill(0)
+        directory=path.resolve().parent
+        clips={};compressed_bytes=0
+        for name,entry in entries.items():
+            if (not isinstance(name,str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}",name)
+                    or (name not in LOOP_STATES and name not in TRANSITIONS) or not isinstance(entry,dict)):
+                raise ClipError("Invalid GPU clip role.")
+            saved=registered[name]
+            if (not isinstance(saved,dict) or type(entry.get("loop")) is not bool
+                    or entry["loop"]!=(name in LOOP_STATES) or saved.get("loop") is not entry["loop"]):
+                raise ClipError("GPU clip playback role differs from its source.")
+            filename=entry.get("file")
+            if not isinstance(filename,str) or not filename or Path(filename).is_absolute():
+                raise ClipError("A clip needs a relative GIF file.")
+            source=(directory/filename).resolve()
+            if not source.is_relative_to(directory) or source.suffix.lower()!=".gif":
+                raise ClipError("Clip files must stay inside their asset directory.")
+            size=source.stat().st_size
+            compressed_bytes+=size
+            if not 0<size<=8*1024*1024 or compressed_bytes>24*1024*1024:
+                raise ClipError("Compressed clip budget exceeded.")
+            if hashlib.sha256(source.read_bytes()).hexdigest()!=saved.get("sha256"):
+                raise ClipError("GPU clip fingerprint does not match the source.")
+            count=saved.get("count");delays=saved.get("delays_ms")
+            if (type(count) is not int or not 2<=count<=180 or not isinstance(delays,list) or len(delays)!=count
+                    or any(type(value) is not int or not 20<=value<=1000 for value in delays)
+                    or sum(delays)>12000 or len(saved.get("body_rects",()))!=count or len(saved.get("flow_rects",()))!=count):
+                raise ClipError("Invalid GPU clip frame clock.")
+            total=0;ends=[]
+            for delay in delays:total+=delay;ends.append(total)
+            clips[name]=Clip(name,source,(placeholder,)*count,tuple(delays),tuple(ends),total,
+                             entry["loop"],cls._anchors(entry.get("anchors")))
+        return cls(clips,canvas,metadata_only=True)
 
     @staticmethod
     def _anchors(value):

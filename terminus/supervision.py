@@ -117,7 +117,7 @@ def delegate(role, action, root, data, *, scale=None):
         if role == 'desktop' and action != 'stop':
             set_paused('core',data,False)
     if scale is not None and role == 'desktop' and action in {'start','restart'}:
-        from PyQt5 import QtCore
+        from PySide6 import QtCore
         preferences = QtCore.QSettings(str(Path(data)/'desktop.ini'),QtCore.QSettings.IniFormat)
         preferences.setValue('scale',scale); preferences.sync()
         os.chmod(preferences.fileName(),0o600)

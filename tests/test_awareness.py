@@ -94,23 +94,17 @@ def test_worker_has_fresh_local_pulses_lazy_window_poll_and_bounded_teardown():
     assert not observer.snapshot()["enabled"] and not observer.snapshot()["available"]
 
 
-@pytest.mark.parametrize("provider_result,caret_source,typing", [
-    ({"rect": {"x": 180, "y": 150, "width": 0, "height": 18}, "secure": False, "fresh": True}, "at-spi", True),
-    ({"rect": {"x": 180, "y": 150, "width": 1, "height": 18}, "secure": True}, "window-fallback", False),
-    ({"rect": {"x": 0, "y": 0, "width": 1, "height": 18}, "secure": False}, "window-fallback", True),
-    ({"rect": {"x": 180, "y": 150, "width": 1, "height": 18}, "fresh": False}, "window-fallback", True),
-])
-def test_caret_geometry_is_optional_current_and_secure_entry_suppresses_pulses(provider_result, caret_source, typing):
+def test_retired_caret_provider_is_never_called_or_used():
     backend = FakeBackend()
+    def forbidden(*_):
+        pytest.fail("Desktop awareness must not query any accessibility text interface")
     observer = awareness.DesktopAwareness(environment=ENVIRONMENT, backend_factory=lambda *args: backend,
-                                         caret_provider=lambda window: provider_result).start()
+                                         caret_provider=forbidden).start()
     try:
         eventually(lambda: observer.snapshot()["available"])
-        state = observer.snapshot()
-        assert state["caret_source"] == caret_source
-        assert state["typing"]["active"] is typing
-        if not typing:
-            assert state["typing"]["last_at"] is None and state["typing"]["rate"] == 0
+        assert observer.snapshot()["caret"] is None
+        assert observer.snapshot()["caret_source"] == "window-fallback"
+        assert observer.snapshot()["secure_entry"] is None
     finally:
         assert observer.close()
 
@@ -184,3 +178,192 @@ def test_stopping_reply_wait_discards_request_without_blocking():
     with pytest.raises(TimeoutError):
         backend._wait(awareness._Cookie(42))
     assert discarded == [42]
+
+
+def test_typing_bouts_require_sustained_activity_and_have_one_pause_phase():
+    rhythm = awareness._TypingRhythm()
+    rhythm.note(1, 10.)
+    assert rhythm.bout(10.)["level"] == 0
+    assert rhythm.bout(10.)["phase"] == "active"
+    for step in range(1, 21):
+        rhythm.note(1, 10 + step / 10)
+    active = rhythm.bout(12.)
+    assert active["phase"] == "active" and active["duration_s"] == 2
+    assert active["level"] >= .9 and active["sequence"] == 1
+    pause = rhythm.bout(13.2)
+    assert pause["phase"] == "pause" and pause["sequence"] == 1
+    assert 1.1 < pause["pause_age_s"] < 1.3
+    assert rhythm.bout(21.)["phase"] == "idle"
+    rhythm.note(1, 22.)
+    assert rhythm.bout(22.)["sequence"] == 2
+    assert rhythm.bout(22.)["level"] == 0
+
+
+def test_window_summary_is_coarse_bounded_and_rejects_names():
+    screen = {"x": 0, "y": 0, "width": 1000, "height": 1000}
+    summary = awareness._window_summary([{**WINDOW, "title": "never exported", "pid": 999}] * 40, screen)
+    assert summary["available"] and summary["count"] == 32 and len(summary["rects"]) == 8
+    assert summary["coverage"] == 1
+    assert all(set(rect) == {"x", "y", "width", "height"} for rect in summary["rects"])
+    assert "never exported" not in str(summary)
+    assert awareness._window_summary([], None)["available"] is False
+
+
+def test_child_protocol_rejects_text_unknown_fields_nan_and_stale_data():
+    import json
+    observer = awareness.DesktopAwareness(environment=ENVIRONMENT)
+    value = observer._empty("starting")
+    assert observer._accept(json.dumps(value))
+    for bad in ({**value, "text": "private"},
+                {**value, "pointer": {"available": True, "title": 10}},
+                {**value, "observed_at": float("nan")},
+                {**value, "observed_at": time.monotonic()-10},
+                {**value, "focused_window": {**WINDOW, "class": "private"}},
+                {**value, "caret": {"x": 0}},
+                {**value, "windows": {"available": True, "count": 1, "coverage": .2,
+                                     "rects": [{"x": 1, "y": 2, "width": 3, "height": 4, "title": "private"}]}}):
+        assert not observer._accept(json.dumps(bad))
+    assert not observer._accept(b"x" * (awareness.MAX_SNAPSHOT + 1))
+
+
+def test_stalled_child_is_disposable_and_snapshot_does_not_block(monkeypatch):
+    import subprocess
+    import sys
+    monkeypatch.setattr(awareness, "STALE_AFTER", .2)
+    children = []
+    def popen(args, **kwargs):
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"], **kwargs)
+        children.append(process)
+        return process
+    observer = awareness.DesktopAwareness(environment=ENVIRONMENT, popen=popen).start()
+    try:
+        eventually(lambda: bool(children))
+        start = time.monotonic()
+        for _ in range(1000):
+            observer.snapshot()
+        assert time.monotonic() - start < .2
+        eventually(lambda: children[0].poll() is not None)
+        assert not observer.snapshot()["available"]
+        assert observer.close()
+        assert children[0].stdout.closed
+    finally:
+        observer.close()
+
+
+def test_oversize_or_invalid_child_pipe_is_reaped_without_unbounded_accumulation():
+    import subprocess
+    import sys
+    children = []
+    def popen(args, **kwargs):
+        code = "import sys,time; sys.stdout.write('x'*100000); sys.stdout.flush(); time.sleep(20)"
+        process = subprocess.Popen([sys.executable, "-c", code], **kwargs)
+        children.append(process)
+        return process
+    observer = awareness.DesktopAwareness(environment=ENVIRONMENT, popen=popen).start()
+    try:
+        eventually(lambda: bool(children) and children[0].poll() is not None)
+        assert observer.snapshot()["available"] is False
+        assert observer.close()
+    finally:
+        observer.close()
+
+
+def test_termination_resistant_child_is_killed_and_only_owned_pid_is_touched():
+    import subprocess
+    import sys
+    children = []
+    def popen(args, **kwargs):
+        code = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('ready',flush=True); time.sleep(20)"
+        # Parent sees invalid output and terminates/reaps the owned child.
+        process = subprocess.Popen([sys.executable, "-c", code], **kwargs)
+        children.append(process)
+        return process
+    observer = awareness.DesktopAwareness(environment=ENVIRONMENT, popen=popen).start()
+    try:
+        eventually(lambda: bool(children) and children[0].poll() is not None)
+        assert children[0].returncode < 0
+        assert observer.close(timeout=.8)
+    finally:
+        observer.close()
+
+
+def test_passive_xcb_api_surface_has_no_input_control_symbols():
+    import inspect
+    source = inspect.getsource(awareness._XcbBackend)
+    for forbidden in ("xcb_grab", "xcb_ungrab", "xcb_set_input_focus", "xcb_send_event",
+                      "XGrab", "XTest", "warp_pointer", "set_selection_owner"):
+        assert forbidden not in source
+    assert "xcb_input_xi_select_events" in source
+    assert "1 << 13" in source  # RawKeyPress only, passive header counts.
+
+
+def test_macos_adapter_never_uses_event_taps_accessibility_or_audio():
+    from pathlib import Path
+    source = (Path(awareness.__file__).with_name("perception_macos.py")).read_text()
+    for forbidden in ("CGEventTapCreate", "CGEventPost", "CGWarpMouseCursorPosition", "AXUIElement",
+                      "CGRequestListenEventAccess", "AVCapture", "pyaudio", "kCGWindowName", "kCGWindowOwnerName"):
+        assert forbidden not in source
+    assert "CGPreflightListenEventAccess" in source
+    assert "CGEventSourceSecondsSinceLastEventType" in source
+
+
+def test_microphone_status_is_only_bounded_stream_metadata_and_never_recording(monkeypatch):
+    import subprocess
+    import sys
+    if sys.platform != "linux":
+        pytest.skip("The stream metadata adapter is Linux-only")
+    original = subprocess.Popen
+    commands, children = [], []
+    def popen(args, **kwargs):
+        commands.append(args)
+        process = original([sys.executable, "-c", "print('123\\t2\\t4\\tprotocol-native.c')"], **kwargs)
+        children.append(process)
+        return process
+    monkeypatch.setattr(awareness.subprocess, "Popen", popen)
+    status = awareness._MicrophoneStatus()
+    assert status.sample(10.) is True
+    assert status.sample(11.) is True
+    assert len(commands) == 1  # Cached, no audio-device opening or tight polling.
+    assert commands == [["pactl", "list", "short", "source-outputs"]]
+    assert children[0].poll() == 0 and children[0].stdout.closed
+    assert set(status.__dict__) == {"next_at", "current"}
+
+
+def test_microphone_metadata_deadline_and_output_cap_reap_the_owned_query(monkeypatch):
+    import subprocess
+    import sys
+    if sys.platform != "linux":
+        pytest.skip("The stream metadata adapter is Linux-only")
+    original = subprocess.Popen
+    children = []
+    def popen(args, **kwargs):
+        code = "import sys,time;sys.stdout.write('x'*100000);sys.stdout.flush();time.sleep(20)"
+        process = original([sys.executable, "-c", code], **kwargs)
+        children.append(process)
+        return process
+    monkeypatch.setattr(awareness.subprocess, "Popen", popen)
+    start = time.monotonic()
+    assert awareness._MicrophoneStatus().sample(10.) is None
+    assert time.monotonic()-start < .5
+    assert children[0].poll() is not None and children[0].stdout.closed
+
+
+def test_child_environment_does_not_inherit_credentials_or_injection_variables():
+    import subprocess
+    import sys
+    original = subprocess.Popen
+    calls = []
+    def popen(args, **kwargs):
+        calls.append(kwargs)
+        return original([sys.executable, "-c", "pass"], **kwargs)
+    environment = {**ENVIRONMENT, "PATH": "/usr/bin", "HOME": "/tmp", "GITHUB_TOKEN": "secret",
+                   "TERMINUS_PAIR_TOKEN": "secret", "LD_PRELOAD": "unsafe.so", "PYTHONPATH": "/unsafe"}
+    observer = awareness.DesktopAwareness(environment=environment, popen=popen).start()
+    try:
+        eventually(lambda: observer.process is not None and observer.process.poll() is not None)
+        assert set(calls[0]["env"]) == {"DISPLAY", "XDG_SESSION_TYPE", "PATH", "HOME", "PYTHONNOUSERSITE"}
+        assert "secret" not in str(calls[0]["env"])
+        assert calls[0]["stdin"] == subprocess.DEVNULL and calls[0]["close_fds"] is True
+        assert observer.close()
+    finally:
+        observer.close()

@@ -16,7 +16,9 @@ from typing import Any
 from urllib.parse import urlsplit
 import uuid
 
-from PyQt5 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:sys.path.insert(0,str(REPO_ROOT))
+from PySide6 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 from terminus.supervision import notify,set_paused
 
 try:
@@ -135,8 +137,8 @@ def smoothstep(start: float, end: float, value: float) -> float:
 
 
 class CoreClient(QtCore.QObject):
-    snapshot = QtCore.pyqtSignal(dict)
-    disconnected = QtCore.pyqtSignal(str)
+    snapshot = QtCore.Signal(dict)
+    disconnected = QtCore.Signal(str)
 
     def __init__(self, url: str, data_dir: Path, parent=None):
         super().__init__(parent)
@@ -230,7 +232,10 @@ class CoreClient(QtCore.QObject):
 
     def _finish_event(self, reply):
         status = reply.attribute(QtNetwork.QNetworkRequest.HttpStatusCodeAttribute)
-        if reply.error() != QtNetwork.QNetworkReply.NoError or status not in {200, 201, 202}:
+        if status == 429:
+            # A busy observer cannot make a healthy organism look disconnected.
+            self.rate_limited_events=getattr(self,"rate_limited_events",0)+1
+        elif reply.error() != QtNetwork.QNetworkReply.NoError or status not in {200, 201, 202}:
             self.disconnected.emit("Interaction was not delivered · reconnecting")
         else:
             QtCore.QTimer.singleShot(0, self.poll)
@@ -262,6 +267,9 @@ class Overlay(QtWidgets.QWidget):
         self.setFixedSize(round(CANVAS_WIDTH * self.scale), round(CANVAS_HEIGHT * self.scale))
         self.state = None
         self.connected = False
+        self.gpu_scene = None
+        self.native_input_shape = None
+        self.reference_renderer = os.environ.get("TERMINUS_CPU_REFERENCE") == "1"
         self.status = "Connecting to core"
         self.last_seen = 0.0
         self.started = time.monotonic()
@@ -622,17 +630,7 @@ class Overlay(QtWidgets.QWidget):
                 from desktop.awareness import DesktopAwareness
             except ModuleNotFoundError:
                 from awareness import DesktopAwareness
-            try:
-                try:
-                    from desktop.caret import LocalCaretObserver
-                except ModuleNotFoundError:
-                    from caret import LocalCaretObserver
-                self.caret_provider = LocalCaretObserver()
-                self.caret_provider.start()
-            except (ImportError, OSError, RuntimeError):
-                self.caret_provider = None
-            caret = (lambda window: self.caret_provider.snapshot()) if self.caret_provider is not None else None
-            self.awareness_provider = DesktopAwareness(enabled=True, poll_interval=.5, own_pid=os.getpid(), caret_provider=caret)
+            self.awareness_provider = DesktopAwareness(enabled=True, poll_interval=.5, own_pid=os.getpid())
             self.awareness_provider.start()
         except (ImportError, OSError, RuntimeError):
             if self.caret_provider is not None:
@@ -648,7 +646,7 @@ class Overlay(QtWidgets.QWidget):
     @staticmethod
     def awareness_supported():
         session = os.environ.get("XDG_SESSION_TYPE", "")
-        return (QtWidgets.QApplication.platformName() == "xcb" and bool(os.environ.get("DISPLAY"))
+        return sys.platform == "darwin" and QtWidgets.QApplication.platformName() == "cocoa" or (QtWidgets.QApplication.platformName() == "xcb" and bool(os.environ.get("DISPLAY"))
                 and session != "wayland" and not (os.environ.get("WAYLAND_DISPLAY") and session != "x11"))
 
     def poll_awareness(self):
@@ -691,16 +689,67 @@ class Overlay(QtWidgets.QWidget):
                           "enabled": snapshot.get("enabled") is True, "observed_at": observed,
                           "focused_window": window, "typing": clean_typing,
                           "caret": None if snapshot.get("secure_entry") is True else rectangle(snapshot.get("caret")),
-                          "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "unavailable"} else "unavailable",
+                          "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "mac-readonly", "unavailable"} else "unavailable",
                           "permission": snapshot.get("permission") if snapshot.get("permission") in {"local-observation", "disabled", "unsupported"} else "unsupported",
                           "caret_source": snapshot.get("caret_source") if snapshot.get("caret_source") in {"at-spi", "window-fallback"} else "window-fallback"}
-        if (self.typing_recent(now) and now - self.last_typing_sent >= 45
-                and clean_typing["active"] and clean_typing["sequence"] != self.last_typing_sequence):
-            # The payload records an actual aggregate pulse. Focused window and
-            # caret coordinates stay in this process and never enter the core.
-            observed_wall = time.time() - max(0., now - clean_typing["last_at"])
-            self.client.send_event("activity", context="typing", source="live", intensity=.16, timestamp=observed_wall)
-            self.last_typing_sent, self.last_typing_sequence = now, clean_typing["sequence"]
+        # Geometry stays in this view. The core receives sparse fixed-category
+        # cues only, never a key identity, title, pointer trace or microphone audio.
+        if not (self.awareness_enabled and self.awareness["available"] and self.awareness["enabled"]
+                and self.fresh(now) and 0 <= now-observed <= 3):
+            return
+        def unit(value):
+            return max(0.,min(1.,float(value))) if isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) else 0.
+        pointer=snapshot.get("pointer")
+        if isinstance(pointer,dict) and pointer.get("available") is True:
+            self.awareness["pointer"]={"available":True,"x":unit(pointer.get("x")),"y":unit(pointer.get("y")),"motion":unit(pointer.get("motion"))}
+        windows=snapshot.get("windows")
+        if isinstance(windows,dict) and windows.get("available") is True:
+            rects=[]
+            for rect in (windows.get("rects",[]) if isinstance(windows.get("rects"),list) else [])[:8]:
+                if isinstance(rect,dict):rects.append({k:unit(rect.get(k)) for k in ("x","y","width","height")})
+            self.awareness["windows"]={"available":True,"count":max(0,min(32,int(windows["count"]))) if isinstance(windows.get("count"),int) else 0,"coverage":unit(windows.get("coverage")),"rects":rects}
+        microphone=snapshot.get("microphone")
+        if isinstance(microphone,dict):
+            self.awareness["microphone"]={"available":microphone.get("available") is True,"in_use":microphone.get("in_use") is True}
+        bout=snapshot.get("bout")
+        previous=getattr(self,"perception_emissions",{})
+        def emit(context,intensity,minimum,sequence=None,observed_wall=None):
+            old=previous.get(context,(-math.inf,None,0.))
+            escalation=context=="typing" and intensity>=.45 and old[2]<.45 and now-old[0]>=.5
+            if (now-old[0]<minimum and not escalation) or sequence is not None and sequence==old[1]:return
+            budget=[stamp for stamp in getattr(self,"passive_event_budget",[]) if 0<=now-stamp<60]
+            self.passive_event_budget=budget
+            if len(budget)>=18:
+                self.passive_events_dropped=getattr(self,"passive_events_dropped",0)+1
+                return
+            budget.append(now)
+            self.client.send_event("activity",context=context,source="live",intensity=intensity,timestamp=time.time() if observed_wall is None else observed_wall)
+            previous[context]=(now,sequence,intensity)
+        if isinstance(bout,dict):
+            phase=bout.get("phase");sequence=bout.get("sequence")
+            if phase=="active" and clean_typing is not None and 0<=now-clean_typing["last_at"]<=2:
+                level=unit(bout.get("level"))
+                emit("typing",max(.45,level) if level>=.4 else .16,8,
+                     observed_wall=time.time()-max(0.,now-clean_typing["last_at"]))
+            elif (phase=="pause" and isinstance(sequence,int) and clean_typing is not None
+                  and 0<=now-clean_typing["last_at"]<=10
+                  and (unit(bout.get("level"))>=.4 or previous.get("typing",(0,None,0))[2]>=.45)):
+                emit("typing-pause",max(.45,unit(bout.get("level"))),2.5,sequence,
+                     observed_wall=time.time()-max(0.,now-clean_typing["last_at"]))
+        elif self.typing_recent(now) and clean_typing is not None and clean_typing["active"]:
+            emit("typing",.16,45,clean_typing["sequence"])
+        pointer=self.awareness.get("pointer",{})
+        if pointer.get("motion",0)>.08:emit("pointer",pointer["motion"]*.3,15)
+        windows=self.awareness.get("windows",{})
+        if windows.get("available"):emit("desktop",windows.get("coverage",0)*.2,30)
+        microphone=self.awareness.get("microphone",{})
+        old_microphone=getattr(self,"microphone_in_use",False)
+        if microphone.get("available"):
+            current=microphone["in_use"]
+            if current:emit("microphone",.55,15)
+            elif old_microphone:emit("microphone",0.,0)
+            self.microphone_in_use=current
+        self.perception_emissions=previous
 
     def awareness_fresh(self, now):
         window = self.awareness.get("focused_window")
@@ -710,15 +759,18 @@ class Overlay(QtWidgets.QWidget):
 
     def typing_recent(self, now):
         typing = self.awareness.get("typing")
-        return (self.awareness_fresh(now) and isinstance(typing, dict)
+        return (self.awareness_enabled and self.fresh(now) and self.awareness.get("available")
+                and 0 <= now-self.awareness.get("observed_at",0) <= 3 and isinstance(typing, dict)
                 and 0 <= now - typing.get("last_at", -math.inf) <= 1.8)
 
     def inspection_target(self, now):
-        if not self.awareness_fresh(now):
-            return None
-        caret = self.awareness.get("caret")
-        if isinstance(caret, dict) and self.awareness.get("caret_source") == "at-spi" and self.typing_recent(now):
-            return QtCore.QPointF(caret["x"] + caret["width"] / 2, caret["y"] + caret["height"] / 2)
+        if not (self.awareness_enabled and self.fresh(now) and self.awareness.get("available")
+                and 0<=now-self.awareness.get("observed_at",0)<=3):return None
+        pointer=self.awareness.get("pointer",{})
+        if pointer.get("available") and pointer.get("motion",0)>.04 and self.home_screen:
+            area=self.home_screen.availableGeometry()
+            return QtCore.QPointF(area.x()+pointer["x"]*area.width(),area.y()+pointer["y"]*area.height())
+        if not self.awareness_fresh(now):return None
         window = self.awareness["focused_window"]
         rect = QtCore.QRectF(window["x"], window["y"], window["width"], window["height"])
         origin = QtCore.QPointF(self.x() + self.creature_rect.center().x() * self.scale,
@@ -765,8 +817,11 @@ class Overlay(QtWidgets.QWidget):
         # Their fixed canvas stays attached to the graph without a texture rig.
         resting = self.sleep_blend if self.clip_sample is None else 0.
         height = 206 * (1 - resting * .07) * (1 + .002 * breath)
-        art = self.artwork()
-        width = height * (art.width() / art.height() if not art.isNull() else .92)
+        if self.clip_library is not None:
+            width=height*self.clip_library.canvas[0]/self.clip_library.canvas[1]
+        else:
+            art = self.artwork()
+            width = height * (art.width() / art.height() if not art.isNull() else .92)
         width *= 1 + resting * .07
         self.creature_rect = QtCore.QRectF(anchor.x() - width / 2 + self.body_offset.x(),
                                          anchor.y() - height + 10 + self.body_offset.y() - self.flight_strength * 9, width, height)
@@ -998,7 +1053,7 @@ class Overlay(QtWidgets.QWidget):
             # Keep the source resolution here: Qt must perform exactly the
             # same final sampling as the unshaded GIF, including its alpha
             # silhouette, eye detail and the desktop's input shape.
-            image = self.skin.shade(self.clip_sample)
+            image = self.skin.shade(self.clip_sample) if self.reference_renderer else self.clip_sample.image
             painter.drawImage(self.creature_rect, image)
         else:
             art = self.artwork()
@@ -1028,8 +1083,105 @@ class Overlay(QtWidgets.QWidget):
         transform.translate(-pivot.x(), -pivot.y())
         return transform
 
+    def enable_gpu(self):
+        if QtWidgets.QApplication.platformName() in {"offscreen","minimal"}:
+            return False
+        try:
+            from desktop.gpu import GpuScene
+            scene=GpuScene(self)
+            if not scene.available:
+                self.gpu_error="; ".join(scene.errors)
+                scene.deleteLater()
+                return False
+            from desktop.animation import ClipPlayer
+            self.clip_library=scene.playback_library()
+            self.clip_player=ClipPlayer(self.clip_library)
+            self.clip_sample=None
+            self.clip_pixmap=QtGui.QPixmap();self.clip_pixmap_key=None
+            self.static_art=QtGui.QPixmap();self.sleep_art=QtGui.QPixmap();self.pose_art.clear();self.art_cache.clear()
+            QtGui.QPixmapCache.clear()
+            self.gpu_scene=scene
+            scene.setGeometry(self.rect())
+            scene.show()
+            self.render_frame(time.monotonic())
+            self.update()
+            return True
+        except (ImportError,OSError,RuntimeError,ValueError) as error:
+            self.gpu_error=type(error).__name__+": "+str(error)
+            return False
+
+    def render_gpu_frame(self, now, anchor, points, gestures):
+        sample=self.clip_sample
+        if sample is None:return
+        dragging=self.press_global is not None and self.dragged and self.drag_mode=="window"
+        self.skin.update(now,state=self.state,motion=max(self.flight_strength,.85 if dragging else 0.),
+                         touch_age=now-self.touch_started,gesture=(self.gesture(now) or {}).get("kind"),
+                         fresh=self.fresh(now),reduced_motion=self.reduced_motion)
+        state=self.state or {};by_id={n["id"]:n for n in state.get("nodes",[])}
+        contacts={key for key,_,_ in gestures};attention=state.get("attention")
+        nodes=[{"id":key,"x":point.x(),"y":point.y(),"activation":amount(by_id[key].get("activation")),
+                "focus":key==attention,"contact":key in contacts} for key,point in points.items()]
+        edges=[]
+        for i,edge in enumerate(state.get("edges",[])):
+            a,b=edge["source"],edge["target"]
+            if a not in points or b not in points:continue
+            middle=(points[a]+points[b])/2;bow=8*math.sin(i*2.4)
+            edges.append({"x0":points[a].x(),"y0":points[a].y(),"x1":points[b].x(),"y1":points[b].y(),
+                          "cx":middle.x()+bow,"cy":middle.y()+12+abs(bow),"index":i,
+                          "activation":max(amount(by_id[a].get("activation")),amount(by_id[b].get("activation"))),
+                          "weight":amount(edge.get("weight"),.3),"focus":a==attention or b==attention})
+        tendrils=[]
+        for i,(_,curve,active) in enumerate(gestures):
+            values=[curve.elementAt(j) for j in range(4)]
+            tendrils.append(dict(zip(("x0","y0","cx0","cy0","cx1","cy1","x1","y1"),
+                                     [v for e in values for v in (e.x,e.y)]),activation=active,index=i))
+        glyphs=[];age=now-self.glyph_started
+        if self.fresh(now) and self.glyph_sequence and 0<=age<7:
+            import base64
+            x=max(22,min(CANVAS_WIDTH-80,anchor.x()+64));y=max(18,self.creature_rect.top()+42-(0 if self.reduced_motion else age*5))
+            for i,glyph in enumerate(self.glyph_sequence):
+                svg=('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="'+GLYPH_PATHS[glyph]+'" fill="none" stroke="#b5fae8" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+                glyphs.append({"source":"data:image/svg+xml;base64,"+base64.b64encode(svg.encode()).decode(),
+                               "x":x+i*20,"y":y+(0 if self.reduced_motion else math.sin(i+age)*2),
+                               "opacity":max(0.,min(1.,age/.45,(7-age)/2))*.85})
+        clip=self.clip_library.clips[sample.clip];delay=clip.delays_ms[sample.index]
+        phase=0. if self.reduced_motion else (max(0.,min(1.,1-sample.next_frame_ms/delay)) if self.fresh(now) else getattr(self,"last_gpu_phase",0.))
+        self.last_gpu_phase=phase
+        rect=self.creature_rect
+        self.gpu_scene.setGeometry(self.rect())
+        self.gpu_scene.set_scene(clip=sample.clip,index=sample.index,phase=phase,
+            body_rect=(rect.x(),rect.y(),rect.width(),rect.height()),mirror=sample.mirror,bank=self.flight_bank,
+            clock=0. if self.reduced_motion else max(0.,self.last_live_frame-self.started),
+            skin_weights=tuple(float(x) for x in self.skin.weights),skin_clock=self.skin.phase,skin_intensity=float(self.skin.intensity) if self.skin.mode!="off" else 0.,
+            graph_gain=self.graph_gain,nodes=nodes,edges=edges,tendrils=tendrils,glyphs=glyphs,
+            opacity=1. if self.connected else .48,morph_strength=0. if self.reduced_motion else 1.,
+            status={"visible":self.status_visible(now),"text":"Terminus · "+self.status},
+            desktop_rects=self.awareness.get("windows",{}).get("rects",[]) if self.awareness_enabled else (),
+            cursor=(self.awareness["pointer"]["x"],self.awareness["pointer"]["y"],self.awareness["pointer"]["motion"])
+                if self.awareness_enabled and self.awareness.get("pointer",{}).get("available") else None,
+            mic_active=self.awareness.get("microphone",{}).get("in_use",False) if self.awareness_enabled else False)
+        if now-self.last_mask>=.5 or self.input_region.isEmpty():
+            # Native hit testing uses source alpha and a few vector curves at
+            # 2Hz. It never reads the GPU framebuffer or the rest of the desktop.
+            frame=QtGui.QImage(self.size(),QtGui.QImage.Format_ARGB32_Premultiplied);frame.fill(QtCore.Qt.transparent)
+            painter=QtGui.QPainter(frame);painter.scale(self.scale,self.scale)
+            painter.save();painter.setTransform(self.body_transform(self.pose(now)),True)
+            matte=self.gpu_scene.hit_frame(sample.clip,sample.index)
+            painter.drawImage(rect,matte);painter.restore()
+            painter.setPen(QtGui.QPen(QtCore.Qt.white,5));painter.setBrush(QtCore.Qt.NoBrush)
+            for _,curve,_ in gestures:painter.drawPath(curve)
+            painter.setPen(QtGui.QPen(QtCore.Qt.white,2))
+            for path in self.graph_paths:
+                if path is not None:painter.drawPath(path)
+            painter.end();self.update_input_mask(frame);self.last_mask=now
+
     def render_frame(self, now):
         started = time.perf_counter()
+        if self.gpu_scene is not None and not self.gpu_scene.available:
+            scene=self.gpu_scene;self.gpu_scene=None
+            self.gpu_error="; ".join(scene.errors) or "GPU renderer unavailable"
+            scene.hide();scene.deleteLater()
+            self.art_signature=None;self.load_art()
         if self.fresh(now):
             self.last_live_frame = now
         self.prepare_clip(now)
@@ -1037,6 +1189,10 @@ class Overlay(QtWidgets.QWidget):
         elapsed = 0 if self.reduced_motion else max(0, clock - self.started)
         anchor, points = self.scene_geometry(now)
         gestures = self.tendril_geometry(points, now)
+        if self.gpu_scene is not None and self.gpu_scene.available:
+            self.render_gpu_frame(now,anchor,points,gestures)
+            self.render_ms=(time.perf_counter()-started)*1000
+            return
         graph = QtGui.QImage(self.size(), QtGui.QImage.Format_ARGB32_Premultiplied)
         graph.fill(QtCore.Qt.transparent)
         graph_painter = QtGui.QPainter(graph)
@@ -1121,7 +1277,7 @@ class Overlay(QtWidgets.QWidget):
         # Threshold at 2/255 instead, and pad two pixels for breathing/glows.
         alpha = frame.convertToFormat(QtGui.QImage.Format_Alpha8)
         pointer = alpha.constBits()
-        pointer.setsize(alpha.byteCount())
+        pass  # Qt 6 returns an already sized memoryview.
         # QBitmap's opaque color is black (Qt.color1); white is transparent.
         threshold = bytes(pointer).translate(bytes(0 if value > 2 else 255 for value in range(256)))
         monochrome = QtGui.QImage(threshold, alpha.width(), alpha.height(), alpha.bytesPerLine(),
@@ -1130,19 +1286,30 @@ class Overlay(QtWidgets.QWidget):
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
             region = region.united(region.translated(dx, dy))
         self.input_region = region
-        if sys.platform != "darwin" and self.mask() != region:
-            self.setMask(region)
+        if sys.platform != "darwin":
+            gpu=self.gpu_scene is not None and self.gpu_scene.available
+            if self.native_input_shape is not None and self.native_input_shape.available:
+                if not self.native_input_shape.set_region(region):
+                    if gpu:self.gpu_scene._graphics_error(None,"Native input shape unavailable; using raster")
+                    self.setMask(region)
+            elif not gpu and self.mask()!=region:
+                self.setMask(region)
+
         self.mask_ms = (time.perf_counter() - started) * 1000
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        painter.drawImage(0, 0, self.frame)
+        if self.gpu_scene is not None and self.gpu_scene.available:
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
+            painter.fillRect(self.rect(),QtCore.Qt.transparent)
+        else:
+            painter.drawImage(0, 0, self.frame)
 
     def animate(self):
         now = time.monotonic()
         dt = min(.15, max(0., now - self.last_frame))
         self.last_frame = now
-        target = 1. if (self.state or {}).get("behavior") in {"sleep", "dream"} and not self.sleep_art.isNull() else 0.
+        target = 1. if (self.state or {}).get("behavior") in {"sleep", "dream"} and (self.gpu_scene is not None or not self.sleep_art.isNull()) else 0.
         # This is a resident companion: slow sleep breathing does not need a
         # full 30-fps repaint, and a disconnected view can be quieter still.
         interval = self.frame_interval(now)
@@ -1156,6 +1323,12 @@ class Overlay(QtWidgets.QWidget):
         self.update()
 
     def frame_interval(self, now):
+        if self.gpu_scene is not None and self.gpu_scene.available:
+            if self.reduced_motion:return 250
+            if not self.fresh(now):return 500
+            if self.hovering or self.press_global is not None or now-self.touch_started<1.6:return 50
+            if self.gesture(now) or self.roam_goal is not None and self.can_roam(now):return 66
+            return 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
         interval = self.presentation_interval(now)
         if self.clip_sample is not None and not self.reduced_motion and self.fresh(now):
             interval = min(interval, max(20, min(250, int(self.clip_sample.next_frame_ms))))
@@ -1414,13 +1587,13 @@ class Overlay(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         if event.button() != QtCore.Qt.LeftButton:
             return super().mousePressEvent(event)
-        self.press_global = event.globalPos()
-        self.press_local = self._logical(event.pos())
+        self.press_global = event.globalPosition().toPoint()
+        self.press_local = self._logical(event.position().toPoint())
         self.press_window = self.pos()
         self.press_creature = self.creature_rect.contains(self.press_local)
         self.dragged = False
         self.drag_mode = "graph" if event.modifiers() & QtCore.Qt.AltModifier else "window"
-        self.last_drag_position = event.globalPos()
+        self.last_drag_position = event.globalPosition().toPoint()
         self.last_drag_at = time.monotonic()
         self.drag_velocity = QtCore.QPointF()
         self.interaction_until = time.monotonic() + 8
@@ -1429,16 +1602,16 @@ class Overlay(QtWidgets.QWidget):
 
     def mouseMoveEvent(self, event):
         if self.press_global is None:
-            self.setCursor(QtCore.Qt.PointingHandCursor if self.creature_rect.contains(self._logical(event.pos())) else QtCore.Qt.OpenHandCursor)
+            self.setCursor(QtCore.Qt.PointingHandCursor if self.creature_rect.contains(self._logical(event.position().toPoint())) else QtCore.Qt.OpenHandCursor)
             return
-        delta = event.globalPos() - self.press_global
+        delta = event.globalPosition().toPoint() - self.press_global
         if delta.manhattanLength() >= QtWidgets.QApplication.startDragDistance():
             self.dragged = True
         if self.dragged:
             if self.drag_mode == "window":
                 self.move(self.press_window + delta)
                 if self.last_drag_position is not None:
-                    movement = event.globalPos() - self.last_drag_position
+                    movement = event.globalPosition().toPoint() - self.last_drag_position
                     now = time.monotonic()
                     if not self.reduced_motion:
                         self.body_velocity += QtCore.QPointF(-movement.x() * .8, -movement.y() * .8)
@@ -1458,9 +1631,9 @@ class Overlay(QtWidgets.QWidget):
                             self.render_frame(now)
                             self.update()
                     self.animation.setInterval(33)
-                self.last_drag_position = event.globalPos()
+                self.last_drag_position = event.globalPosition().toPoint()
             elif self.connected:
-                self.drag_target = self._logical(event.pos())
+                self.drag_target = self._logical(event.position().toPoint())
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -1468,7 +1641,7 @@ class Overlay(QtWidgets.QWidget):
             return super().mouseReleaseEvent(event)
         if self.connected:
             if self.dragged and self.drag_mode == "graph":
-                self.client.send_event("drag", **self.graph_position(self._logical(event.pos())))
+                self.client.send_event("drag", **self.graph_position(self._logical(event.position().toPoint())))
             elif not self.dragged and self.press_creature:
                 self.touch_started = time.monotonic()
                 self.touch_direction = -1 if self.press_local.x() < self.creature_rect.center().x() else 1
@@ -1662,7 +1835,7 @@ class Overlay(QtWidgets.QWidget):
 
     def contextMenuEvent(self, event):
         menu = self.make_menu()
-        menu.exec_(event.globalPos())
+        menu.exec(event.globalPos())
         menu.deleteLater()
 
     def tray_activated(self, reason):
@@ -1691,6 +1864,7 @@ class Overlay(QtWidgets.QWidget):
 
     def closeEvent(self, event):
         self.save_view_preferences()
+        if self.native_input_shape is not None:self.native_input_shape.close()
         self.animation.stop()
         self.asset_timer.stop()
         self.presence_timer.stop()
@@ -1723,6 +1897,7 @@ class Overlay(QtWidgets.QWidget):
                 "topmost": bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint),
                 "frameless": bool(self.windowFlags() & QtCore.Qt.FramelessWindowHint),
                 "accepts_focus": not bool(self.windowFlags() & QtCore.Qt.WindowDoesNotAcceptFocus),
+                "input_shape_only":bool(self.native_input_shape is not None and self.native_input_shape.available),
                 "geometry": {"x": geometry.x(), "y": geometry.y(), "width": geometry.width(), "height": geometry.height()},
                 "screen": {"name": screen.name() if screen else None, "x": area.x(), "y": area.y(), "width": area.width(), "height": area.height()},
                 "exposed": bool(handle and handle.isExposed()), "connected": self.connected,
@@ -1731,7 +1906,7 @@ class Overlay(QtWidgets.QWidget):
                 "reduced_motion": self.reduced_motion, "snapshot_fresh": self.fresh(),
                 "facing": "left" if self.facing < 0 else "right", "facing_mode": self.facing_mode,
                 "flight_strength": round(self.flight_strength, 3), "typing_pose": self.typing_blend > .05,
-                "body_animation": {"backend": "gif" if self.clip_sample is not None else "image-fallback",
+                "body_animation": {"backend": "gpu-flow-atlas" if self.gpu_scene is not None and self.gpu_scene.available else "gif" if self.clip_sample is not None else "image-fallback",
                                    "clip": self.clip_sample.clip if self.clip_sample is not None else None,
                                    "frame": self.clip_sample.index if self.clip_sample is not None else None,
                                    "transition": bool(self.clip_sample is not None and self.clip_sample.transition),
@@ -1739,9 +1914,11 @@ class Overlay(QtWidgets.QWidget):
                                    "load_error": self.clip_error,
                                    "clip_errors": len(getattr(self.clip_library, "errors", ()))},
                 "graph_visibility": self.graph_visibility, "graph_gain": self.graph_gain,
-                "skin": self.skin.diagnostics(),
+                "graphics": self.gpu_scene.diagnostics() if self.gpu_scene is not None else {"backend":"raster-sprite-fallback","error":getattr(self,"gpu_error",None)},
+                "skin": {**self.skin.diagnostics(),"backend":"gpu-fragment-shader","eye_mask_valid":True,"evaluation_ms":0.} if self.gpu_scene is not None and self.gpu_scene.available else self.skin.diagnostics(),
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
-                                      "source": self.awareness.get("source", "unavailable"), "caret_source": self.awareness.get("caret_source", "window-fallback")},
+                                      "source": self.awareness.get("source", "unavailable"), "caret_source": "retired", "worker": self.awareness.get("source","unavailable"),
+                                      "passive_events_dropped":getattr(self,"passive_events_dropped",0)},
                 "frame_interval_ms": self.animation.interval(), "render_ms": round(self.render_ms, 2),
                 "input_mask_ms": round(self.mask_ms, 2),
                 "gesture": (self.gesture(time.monotonic()) or {}).get("kind"),
@@ -1754,6 +1931,7 @@ class Overlay(QtWidgets.QWidget):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--renderer",choices=("auto","gpu","raster"),default="auto")
     parser.add_argument("--url", default=None, help="Core origin; default http://127.0.0.1:8769")
     parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / ".local", help="Core data directory containing token")
     parser.add_argument("--scale", type=float, default=None, help="Overlay size multiplier, 0.65 to 2; default restores this body's setting")
@@ -1772,7 +1950,6 @@ def main(argv=None):
         parser.error("--scale must be between 0.65 and 2")
     if args.smoke_test:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QtWidgets.QApplication([sys.argv[0]])
     app.setApplicationName("Terminus desktop")
     app.setQuitOnLastWindowClosed(True)
@@ -1786,6 +1963,14 @@ def main(argv=None):
             return 1
     client = CoreClient(url, args.data_dir.resolve())
     overlay = Overlay(client, REPO_ROOT / "web" / "assets", args.scale)
+    render_guard=None
+    if args.renderer!="raster" and not args.smoke_test:
+        from desktop.render_guard import RenderGuard
+        render_guard=RenderGuard(args.data_dir)
+        if render_guard.begin():
+            if not overlay.enable_gpu():render_guard.unavailable()
+        else:
+            overlay.gpu_error=render_guard.reason
     if args.no_roam:
         overlay.roaming_paused = True
     if args.reduced_motion:
@@ -1801,6 +1986,14 @@ def main(argv=None):
         mac_presence = MacPresence(overlay)
         overlay.mac_presence = mac_presence
     overlay.show()
+    if app.platformName()=="xcb" and overlay.gpu_scene is not None:
+        from desktop.x11_input import OwnWindowInputShape
+        overlay.clearMask();QtGui.QGuiApplication.sync()
+        overlay.native_input_shape=OwnWindowInputShape(overlay)
+        if not overlay.native_input_shape.available or not overlay.native_input_shape.set_region(overlay.input_region):
+            overlay.gpu_scene._graphics_error(None,"Native input shape unavailable; using raster")
+            if render_guard is not None:render_guard.unavailable()
+            overlay.render_frame(time.monotonic())
     if not args.smoke_test:
         overlay.start_awareness()
     # A short Qt timer gives Python a regular opportunity to receive SIGTERM.
@@ -1813,6 +2006,10 @@ def main(argv=None):
 
     def report_view():
         report = overlay.diagnostics()
+        if render_guard is not None:
+            if render_guard.attempting and (overlay.gpu_scene is not None and not overlay.gpu_scene.available or overlay.gpu_scene is None and getattr(overlay,"gpu_error",None)):
+                render_guard.unavailable()
+            render_guard.healthy(report)
         alive = report["visible"] and report["platform"] not in {"offscreen", "minimal"}
         # This timer runs on Qt's own event loop. Core disconnection is handled
         # by reconnection, without restarting an otherwise healthy desktop.
@@ -1827,7 +2024,8 @@ def main(argv=None):
             if time.monotonic() - captured["since"] >= 1 and time.monotonic() - overlay.started >= 5:
                 args.capture_file.parent.mkdir(parents=True, exist_ok=True)
                 # This captures only our own widget, never another application.
-                captured["done"] = overlay.grab().save(str(args.capture_file), "PNG")
+                captured["done"] = True
+                captured["saved"] = overlay.grab().save(str(args.capture_file), "PNG")
 
     status_timer = QtCore.QTimer(app)
     status_timer.timeout.connect(report_view)
@@ -1862,7 +2060,7 @@ def main(argv=None):
         client.disconnected.connect(fail)
         QtCore.QTimer.singleShot(6500, lambda: fail("No authoritative snapshot received"))
     client.start()
-    result = app.exec_()
+    result = app.exec()
     overlay.close()
     if lock:
         lock.unlock()
