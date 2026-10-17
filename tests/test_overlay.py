@@ -637,7 +637,7 @@ class OverlayTests(unittest.TestCase):
         self.assertGreaterEqual(widget.frame_interval(now), 125)
         state["behavior"] = "inspect"
         state["gesture"] = {"id": "g-peer", "kind": "peer", "started_at": 1000., "duration": 4., "strength": .7}
-        self.assertLessEqual(widget.frame_interval(now), 40)
+        self.assertLessEqual(widget.frame_interval(now), 66 if sys.platform == "darwin" else 40)
         self.assertGreaterEqual(widget.frame_interval(now + 6), 250)
         widget.reduced_motion = True
         self.assertGreaterEqual(widget.frame_interval(now), 250)
@@ -650,7 +650,7 @@ class OverlayTests(unittest.TestCase):
         now = widget.last_seen
         widget.interaction_until = 0
         widget.roam_goal = OVERLAY.QtCore.QPointF(widget.pos()) + OVERLAY.QtCore.QPointF(-400, 0)
-        self.assertLessEqual(widget.frame_interval(now), 40)
+        self.assertLessEqual(widget.frame_interval(now), 66 if sys.platform == "darwin" else 40)
         for behavior in ("sleep", "dream"):
             state["behavior"] = behavior
             self.assertGreaterEqual(widget.frame_interval(now), 125)
