@@ -14,6 +14,8 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from terminus.supervision import delegate
 DATA = ROOT / '.local'
 RECORD = DATA / 'managed-core.json'
 
@@ -146,6 +148,9 @@ def main():
     DATA.mkdir(exist_ok=True, mode=0o700)
     with (DATA / 'core-manager.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        supervised = delegate('core', args.action, ROOT, DATA)
+        if supervised is not None:
+            return supervised
         record = load_record()
         if args.action == 'status':
             print('Managed core running and healthy' if record and health() else 'No healthy core managed by this checkout')

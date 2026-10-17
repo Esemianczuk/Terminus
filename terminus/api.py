@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .store import Store
+from .supervision import notify
 
 
 COOKIE = "terminus_session"
@@ -257,6 +258,8 @@ class Service:
                 # Keep the supervisor alive even if snapshot/broadcast code
                 # fails outside the transactional physiology/checkpoint paths.
                 self.record_failure("tick", error, self.clock())
+            healthy = self.diagnostics()["status"] == "ok"
+            notify("Core healthy" if healthy else "Core degraded; watchdog recovery pending", healthy=healthy)
 
 
 def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_interval=15.0, clock=time.time, web_dir=None):
@@ -274,6 +277,7 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
         app.state.service = service
         ticker = asyncio.create_task(service.ticker(tick_interval)) if tick_interval else None
         service.ticker_task = ticker
+        notify("Organism state restored; core starting")
         try:
             yield
         finally:

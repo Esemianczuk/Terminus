@@ -23,6 +23,14 @@ uv run python scripts/desktopctl.py status
 uv run python scripts/desktopctl.py stop
 ```
 
+To restore him automatically after crashes and login, install the user services once:
+
+```sh
+uv run python scripts/servicectl.py install
+```
+
+Both processes then restart automatically, with watchdogs for frozen event loops. Existing launcher commands control the services after installation. [Startup, recovery, logs and intentional stopping](docs/SERVICE_RECOVERY.md).
+
 Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart. **Living skin** adds procedural shimmer, travelling color cascades, cuttlefish camouflage and a deep crimson display over the existing GIFs, with protected eyes. Automatic blends them with rest, attention, movement and touch; manual styles and Off are available. [How the skin works](docs/LIVING_SKIN.md).
 
 The web view at **http://127.0.0.1:8769** is an optional observatory and phone body. Pair other browsers using **Pair from token file** and choose `.local/token`, or run `uv run python -m terminus token` in your own terminal. The token stays out of browser storage and URLs.
@@ -85,6 +93,7 @@ Tests cover controlled online prediction learning, habituation, graph updates, e
 
 - [Concept and source chats](docs/CONCEPT.md)
 - [Architecture, current boundaries and next extensions](docs/ARCHITECTURE.md)
+- [Startup services and crash/freeze recovery](docs/SERVICE_RECOVERY.md)
 - [Behavior, physical vocabulary and continuity](docs/ETHOLOGY.md)
 - [Directional flight, window awareness and typing](docs/DESKTOP_AWARENESS.md)
 - [GIF loops, transitions and local frame authoring](docs/GIF_ANIMATION.md)

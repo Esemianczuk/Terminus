@@ -48,3 +48,7 @@ The offscreen check tests network and rendering paths; it is distinct from the r
 `uv run python scripts/render_motion_study.py --output-dir work/motion-study` produces labelled, isolated gesture fixtures for visual review. These are controlled renderer studies, not live autonomous behavior or desktop screenshots.
 
 `uv run python scripts/render_clip_study.py` exercises the current GIF state player through its loops and transitions. Right-click **Graph visibility** for Subtle, Clear or Bright; Bright is the default.
+
+## Persistent startup and recovery
+
+Run `uv run python scripts/servicectl.py install` after initializing the runtime. The core and native body become user services with automatic restart, event-loop watchdogs and login restoration. The existing `desktopctl.py` and `termctl.py` commands then control these services. See [service recovery](../docs/SERVICE_RECOVERY.md) for logs, reboot behavior and intentional stop/disable commands.

@@ -15,6 +15,8 @@ import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from terminus.supervision import delegate
 DATA = ROOT / ".local"
 RECORD = DATA / "managed-desktop.json"
 STATUS = DATA / "desktop-status.json"
@@ -170,6 +172,9 @@ def main() -> int:
     DATA.mkdir(exist_ok=True, mode=0o700)
     with (DATA / "desktop-manager.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        supervised = delegate("desktop", args.action, ROOT, DATA, scale=args.scale)
+        if supervised is not None:
+            return supervised
         record = owned_record()
         if args.action == "status":
             status = live_status(record)

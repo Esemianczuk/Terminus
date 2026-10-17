@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from PyQt5 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
+from terminus.supervision import notify
 
 try:
     from desktop.skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
@@ -1625,12 +1626,19 @@ class Overlay(QtWidgets.QWidget):
         detail = menu.addAction(self.status)
         detail.setEnabled(False)
         menu.aboutToShow.connect(lambda: detail.setText(self.status))
-        menu.addAction("&Quit desktop companion", QtWidgets.QApplication.quit)
+        menu.addAction("&Quit desktop companion", self.quit_desktop)
         menu.aboutToShow.connect(lambda: self.menu_visibility(True))
         menu.aboutToShow.connect(lambda: pause.setChecked(self.roaming_paused))
         menu.aboutToShow.connect(lambda: reduce.setChecked(self.reduced_motion))
         menu.aboutToHide.connect(lambda: self.menu_visibility(False))
         return menu
+
+    def quit_desktop(self):
+        # An explicit Quit must remain possible under Restart=always. Stopping
+        # the unit is intentional; a process exit or crash otherwise recovers.
+        if os.environ.get("TERMINUS_SERVICE") == "desktop":
+            QtCore.QProcess.startDetached("systemctl", ["--user", "--no-block", "stop", "terminus-desktop.service"])
+        QtWidgets.QApplication.quit()
 
     def menu_visibility(self, visible):
         self.menu_open = visible
@@ -1780,6 +1788,10 @@ def main(argv=None):
 
     def report_view():
         report = overlay.diagnostics()
+        alive = report["visible"] and report["platform"] not in {"offscreen", "minimal"}
+        # This timer runs on Qt's own event loop. Core disconnection is handled
+        # by reconnection, without restarting an otherwise healthy desktop.
+        notify("Native desktop body responsive", healthy=alive)
         if args.status_file:
             args.status_file.parent.mkdir(parents=True, exist_ok=True)
             temporary = args.status_file.with_suffix(args.status_file.suffix + ".tmp")
