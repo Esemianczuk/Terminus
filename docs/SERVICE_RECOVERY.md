@@ -1,6 +1,6 @@
 # Startup and automatic recovery
 
-Terminus runs as two systemd **user** services:
+On Linux, Terminus runs as two systemd **user** services:
 
 - `terminus-core.service` owns the persistent organism, local SQLite database and authenticated loopback port 8769.
 - `terminus-desktop.service` owns the native transparent window. It waits for an available graphical session, then replaces its session gate with the real Qt application at the same service PID.
@@ -73,3 +73,11 @@ This disables/stops both application units and the presence timer and removes on
 ## Verification
 
 Unit files are checked by the workstation's own systemd parser before installation. Automated tests cover watchdog ownership, degraded health, private session metadata, native heartbeat validity, service routing and refusal to replace unrelated files. Runtime recovery checks target only verified Terminus service PIDs: a killed desktop, an unexpected core termination and a frozen desktop event loop must all return to an exposed, connected native body with the original organism identity and retained learning counters. No synthetic activity is inserted into the creature's history.
+
+## macOS
+
+Run `uv run python scripts/setup.py` from a checkout while signed into the desktop. The installer creates per-user launch agents `org.terminus.core`, `org.terminus.desktop` and `org.terminus.presence`, plus **Bring Back Terminus.app** on the desktop. The core and body have launchd KeepAlive enabled. A separate guardian checks every 30 seconds and restarts a stalled core or native heartbeat. This requires a logged-in GUI session; the desktop cannot appear before login.
+
+The same `scripts/servicectl.py` commands route to launchd on macOS. Explicit stop and Quit markers are respected. The recovery shortcut resumes the creature and verifies a fresh, exposed, connected native body. It leaves a healthy process alone. Logs are `.local/macos-core.log`, `.local/macos-desktop.log` and `.local/macos-presence.log`. Private memory stays in `.local/organism.sqlite3`.
+
+The optional collective exchange adds `org.terminus.collective`, a ten-minute launch agent. It only accesses its category model and contribution outbox. It does not open the local API to other computers. Use `scripts/update.py` on either platform to back up memory, pull GitHub and rebuild the installed services.

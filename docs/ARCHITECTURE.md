@@ -16,7 +16,7 @@ flowchart LR
 
 The Python service owns organism identity, clock, stochastic state, recurrent weights, graph, inscriptions, position, temperament, motives, finite gestures and motion intent. SQLite stores snapshots and a bounded event history. A seed allows reproducible tests; persisted RNG state and learned weights preserve continuity across restart. Ticking updates internal dynamics even when no client is connected. A renderer interpolates physical expression between updates; it cannot choose a new core behavior independently. Schema 3 adds ethology without consuming the old random stream or replacing learned weights.
 
-Every accepted event has a stable client-generated ID. Deduplication prevents a retried event from teaching twice. WebSocket snapshots contain a monotonic revision. Phone and desktop rendering are views of the same organism, with layouts adapted to screen size.
+Every accepted event has a stable client-generated ID. Deduplication prevents a retried event from teaching twice. WebSocket snapshots contain a monotonic revision. Phone and desktop rendering connected to one core are views of the same organism, with layouts adapted to screen size. Each installed computer starts an independent organism with a fresh identity.
 
 The initial structural scaffold is an explicit prior: edges are marked `origin: scaffold`. Accepted experience adds `origin: learned` associations. Actual edge weights propagate activation and affect attention. Scaffold migration preserves existing learned weights, memory and identity; a scaffold is never counted as learned experience.
 
@@ -25,6 +25,12 @@ The initial structural scaffold is an explicit prior: edges are marked `origin: 
 A compact NumPy recurrent predictor learns the next event class/context bucket from previous events using online gradients. No GPU, pretrained model, cloud API or inference bill is required. Cold-start metrics are exposed in the optional inspector. Associative edges learn co-occurrence and transitions; familiarity reduces surprise from repetition and partly recovers after absence. Sleep consolidation replays actual retained experience. The explicit stochastic policy combines those signals with latent restfulness, curiosity, agitation, focus, symbolic pressure and slow motives. Attention lingers and revisits learned associations. See [ETHOLOGY.md](ETHOLOGY.md) for the causal boundaries.
 
 This does not claim semantic comprehension of screen content. The default sensors do not capture screens, keystrokes, file contents or terminal command strings.
+
+## Optional collective learning
+
+A separate 24-unit recurrent model learns only the seven fixed event categories. It never receives private contexts, text, timestamps or the private predictor's activations. After at least 32 observations it can release a clipped, quantized parameter delta. GitHub serializes validated contributions into a public bank. Clients exchange about every ten minutes, with a local process lock and a newest-round cache for offline continuity.
+
+The locally adapted public model adds a small category prior to attention scores. It does not overwrite the private model or event history. Computers remain separate learners; an optional SSH relay carries only validated contribution packets. See [COLLECTIVE_MEMORY.md](COLLECTIVE_MEMORY.md) for the schema and privacy limits.
 
 ## Storage and access
 

@@ -111,3 +111,33 @@ def test_shared_attention_prior_does_not_change_private_model_weights_or_event_h
     creature._attention_scores(creature.data['nodes'][0],1.)
     assert creature.model.dump()==before['model']
     assert creature.data['events_seen']==before['data']['events_seen']
+
+
+def test_bank_does_not_downgrade_when_network_or_checkout_is_stale(tmp_path,monkeypatch):
+    from io import BytesIO
+    from terminus.collective import write_private
+    current=merge(initial_bank(),[trained().release()])
+    write_private(tmp_path/'collective-bank.json',current)
+    requests=[]
+    def fetch(request,timeout):
+        requests.append(request)
+        return BytesIO(canonical(initial_bank()))
+    monkeypatch.setattr(agent.urllib.request,'urlopen',fetch)
+    assert agent.bank(tmp_path)==current
+    assert requests[0].full_url==agent.API_URL
+    assert requests[0].get_header('Accept')=='application/vnd.github.raw+json'
+
+
+def test_bank_falls_back_from_rate_limited_api_and_invalid_cache(tmp_path,monkeypatch):
+    from io import BytesIO
+    (tmp_path/'collective-bank.json').write_text('broken')
+    current=merge(initial_bank(),[trained().release()])
+    monkeypatch.setattr(agent,'ROOT',tmp_path/'checkout')
+    requests=[]
+    def fetch(request,timeout):
+        requests.append(request.full_url)
+        if request.full_url==agent.API_URL:raise OSError('rate limited')
+        return BytesIO(canonical(current))
+    monkeypatch.setattr(agent.urllib.request,'urlopen',fetch)
+    assert agent.bank(tmp_path)==current and len(requests)==2
+    assert agent.bank(tmp_path,offline=True)==current

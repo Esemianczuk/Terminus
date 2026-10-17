@@ -19,25 +19,34 @@ sys.path.insert(0,str(ROOT))
 from terminus.collective import LocalLearner,MIN_SAMPLES,canonical,digest,validate_bank,validate_contribution,write_private
 
 URL='https://raw.githubusercontent.com/Esemianczuk/Terminus/main/community/bank.json'
+API_URL='https://api.github.com/repos/Esemianczuk/Terminus/contents/community/bank.json'
 REPOSITORY='Esemianczuk/Terminus'
 
 
 def bank(data,offline=False):
     cache=data/'collective-bank.json'
+    candidates=[]
+    # Keep the newest validated round, even when a CDN or offline checkout is
+    # behind the last successful exchange. Invalid caches never block startup.
+    for path in (cache,ROOT/'community/bank.json'):
+        try:candidates.append(validate_bank(json.loads(path.read_text())))
+        except (OSError,ValueError):pass
     if not offline:
-        try:
-            # A new round should not be hidden by a stale CDN response. This
-            # runs only at the configured exchange interval, not per event.
-            request=urllib.request.Request(URL+'?exchange='+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
-            with urllib.request.urlopen(request,timeout=8) as response:
-                raw=response.read(512*1024+1)
-            if len(raw)>512*1024:raise ValueError('Oversized bank')
-            value=validate_bank(json.loads(raw));write_private(cache,value)
-            return value
-        except (OSError,ValueError):
-            pass
-    path=cache if cache.is_file() else ROOT/'community/bank.json'
-    return validate_bank(json.loads(path.read_text()))
+        for url in (API_URL,URL+'?exchange='+str(time.time_ns())):
+            try:
+                request=urllib.request.Request(url,headers={
+                    'Accept':'application/vnd.github.raw+json',
+                    'User-Agent':'Terminus-collective','Cache-Control':'no-cache'})
+                with urllib.request.urlopen(request,timeout=8) as response:
+                    raw=response.read(512*1024+1)
+                if len(raw)>512*1024:raise ValueError('Oversized bank')
+                candidates.append(validate_bank(json.loads(raw)))
+                break
+            except (OSError,ValueError):pass
+    if not candidates:raise ValueError('No valid collective bank available')
+    value=max(candidates,key=lambda b:b['round'])
+    write_private(cache,value)
+    return value
 
 
 def train(data,offline=False):
