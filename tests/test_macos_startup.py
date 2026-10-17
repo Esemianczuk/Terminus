@@ -47,9 +47,9 @@ class MacStartupTests(unittest.TestCase):
         presence=MacPresence.__new__(MacPresence)
         presence.window=window
         presence.collection_behavior=262417
-        with patch.dict(sys.modules,{'AppKit':SimpleNamespace(NSFloatingWindowLevel=3)}):
+        with patch.dict(sys.modules,{'AppKit':SimpleNamespace(NSDockWindowLevel=20)}):
             presence.bring_forward()
-        self.assertEqual(calls,[('collection',262417),('level',3),('front',)])
+        self.assertEqual(calls,[('collection',262417),('level',21),('front',)])
 
 
 if __name__=='__main__':unittest.main()

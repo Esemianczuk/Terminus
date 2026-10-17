@@ -41,7 +41,9 @@ class MacPresence:
         self.nonactivating_mask = AppKit.NSWindowStyleMaskNonactivatingPanel
         self.window.setStyleMask_(self.window.styleMask() | self.nonactivating_mask)
         self.window.setHidesOnDeactivate_(False)
-        self.window.setLevel_(AppKit.NSFloatingWindowLevel)
+        # Dock can place a full-screen desktop layer above ordinary floating
+        # panels. Keep the creature above that layer but below menus and alerts.
+        self.window.setLevel_(AppKit.NSDockWindowLevel + 1)
         self.collection_behavior = (AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
                                     AppKit.NSWindowCollectionBehaviorCanJoinAllApplications |
                                     AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary |
@@ -62,7 +64,7 @@ class MacPresence:
         """Reorder the existing nonactivating body on the current Space."""
         import AppKit
         self.window.setCollectionBehavior_(self.collection_behavior)
-        self.window.setLevel_(AppKit.NSFloatingWindowLevel)
+        self.window.setLevel_(AppKit.NSDockWindowLevel + 1)
         self.window.orderFrontRegardless()
 
     def update_hit_test(self):
