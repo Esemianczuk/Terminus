@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from PyQt5 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
-from terminus.supervision import notify
+from terminus.supervision import notify,set_paused
 
 try:
     from desktop.skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
@@ -1637,6 +1637,7 @@ class Overlay(QtWidgets.QWidget):
         # An explicit Quit must remain possible under Restart=always. Stopping
         # the unit is intentional; a process exit or crash otherwise recovers.
         if os.environ.get("TERMINUS_SERVICE") == "desktop":
+            set_paused("desktop", self.client.data_dir, True)
             QtCore.QProcess.startDetached("systemctl", ["--user", "--no-block", "stop", "terminus-desktop.service"])
         QtWidgets.QApplication.quit()
 

@@ -16,6 +16,23 @@ import urllib.request
 UNITS = {'core': 'terminus-core.service', 'desktop': 'terminus-desktop.service'}
 
 
+def set_paused(role, data, paused):
+    """Keep intentional stops distinct from accidental service outages."""
+    if role not in UNITS:
+        raise ValueError('Unknown Terminus component')
+    path = Path(data)/(role+'-paused')
+    if paused:
+        path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        path.write_text('Intentionally stopped; start or login resumes presence.\n')
+        path.chmod(0o600)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def is_paused(role, data):
+    return (Path(data)/(role+'-paused')).is_file()
+
+
 def notify(status, *, healthy=True):
     """Nonblocking sd_notify, only for this unit's main process. No secrets."""
     address = os.environ.get('NOTIFY_SOCKET')
@@ -88,6 +105,10 @@ def delegate(role, action, root, data, *, scale=None):
     if not installed(root,data):
         return None
     unit = UNITS[role]
+    if action in {'start','restart','stop'}:
+        set_paused(role,data,action=='stop')
+        if role == 'desktop' and action != 'stop':
+            set_paused('core',data,False)
     if scale is not None and role == 'desktop' and action in {'start','restart'}:
         from PyQt5 import QtCore
         preferences = QtCore.QSettings(str(Path(data)/'desktop.ini'),QtCore.QSettings.IniFormat)

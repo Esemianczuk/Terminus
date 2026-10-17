@@ -29,7 +29,7 @@ To restore him automatically after crashes and login, install the user services 
 uv run python scripts/servicectl.py install
 ```
 
-Both processes then restart automatically, with watchdogs for frozen event loops. Existing launcher commands control the services after installation. [Startup, recovery, logs and intentional stopping](docs/SERVICE_RECOVERY.md).
+The **Bring Back Terminus** desktop shortcut checks and restores him with one click. Both processes restart automatically, with watchdogs for frozen event loops and a quiet presence check about every 30 seconds. Existing launcher commands control the services after installation. [Startup, recovery, logs and intentional stopping](docs/SERVICE_RECOVERY.md).
 
 Stopping the desktop body leaves his organism core and learned memory running. Right-click the creature for **Pause roaming**, **Reduced motion**, **Look** (Automatic/Left/Right), **Notice windows and typing**, size, monitor and reposition controls, the observatory, or **Quit**. A normal drag places him on your desktop with directional swimming and a soft landing; Alt-drag moves him within his shared graph; a click pokes him. Roaming pauses while you handle him. Size, placement, facing and motion preferences survive a restart. **Living skin** adds procedural shimmer, travelling color cascades, cuttlefish camouflage and a deep crimson display over the existing GIFs, with protected eyes. Automatic blends them with rest, attention, movement and touch; manual styles and Off are available. [How the skin works](docs/LIVING_SKIN.md).
 

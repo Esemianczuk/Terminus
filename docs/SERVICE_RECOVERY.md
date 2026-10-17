@@ -9,6 +9,12 @@ Both use `Restart=always`, a three-second restart delay, and unlimited restart a
 
 The units are independent after startup. Desktop connection failures use the existing reconnect logic; they do not repeatedly restart an otherwise responsive body. A core restart reloads the same organism and the desktop reconnects. Core memory and all visual features are retained.
 
+## Desktop shortcut and presence guardian
+
+**Bring Back Terminus** on the desktop (also in the applications menu) starts and enables both services and the presence timer, refreshes the graphical session, and confirms that his native body is visible and connected before showing a small notification. Healthy processes are left running. If necessary, a manual click can restart an unresponsive component. The shortcut uses the approved Terminus artwork as its icon.
+
+`terminus-presence.timer` runs a quiet, bounded `terminus-presence.service` check about every 30 seconds. It restores enabled services that have ended up inactive or failed, supplementing crash restart and event-loop watchdogs. It verifies checkout ownership and respects explicit Quit/stop markers and disabled units. Clicking the shortcut or signing in resumes those paused components.
+
 ## Install and use
 
 From an initialized checkout with its existing `.local/organism.sqlite3`:
@@ -18,7 +24,7 @@ uv run python scripts/servicectl.py install
 uv run python scripts/servicectl.py status
 ```
 
-The installer refuses to overwrite unrelated user-service or autostart files. It gracefully hands off only processes whose exact identity the existing launchers can verify. It retains the private pairing token and SQLite database. On this workstation, a consistent SQLite backup was taken before installation and the database passed `PRAGMA quick_check`.
+The installer creates the trusted executable desktop shortcut, an applications-menu entry, and the presence timer. It refuses to overwrite unrelated shortcut, user-service or autostart files. It gracefully hands off only processes whose exact identity the existing launchers can verify. It retains the private pairing token and SQLite database. On this workstation, a consistent SQLite backup was taken before installation and the database passed `PRAGMA quick_check`.
 
 After installation the existing commands delegate to systemd, preventing duplicate unmanaged processes:
 
@@ -40,7 +46,7 @@ Logs now go to the user journal. Old `.local/core.log` / `desktop.log` files rem
 
 ## Login, reboot and logout
 
-Both units are enabled under the user manager's `default.target`. User lingering is already enabled on this workstation: the core can start at boot before graphical login. The desktop waits quietly for a usable display and continues feeding its watchdog while waiting.
+Both application units are enabled under the user manager's `default.target`. User lingering is already enabled on this workstation: the core can start at boot before graphical login. The desktop waits quietly for a usable display and continues feeding its watchdog while waiting.
 
 Budgie's `graphical-session.target` is inactive here, so startup does not depend on that target. A managed XDG autostart entry, `~/.config/autostart/terminus.desktop`, refreshes the graphical session metadata and restores the desktop service at login. Its helper saves only an allowlist of display/session connection variables to a private file; it never copies the shell environment wholesale or saves the organism's pairing token there. X11 availability is checked by opening and closing a display connection without requesting screen contents. Session loss or a compositor/display restart causes the native process to exit or freeze; normal restart/watchdog handling restores it once the display is usable.
 
@@ -62,7 +68,7 @@ uv run python scripts/servicectl.py start
 uv run python scripts/servicectl.py disable
 ```
 
-This disables/stops both units and removes only the managed login bridge. It leaves all learned state intact. Run `install` again to re-enable persistent startup. `--part core` or `--part desktop` restricts a control operation to that component; starting the desktop also requests its core dependency.
+This disables/stops both application units and the presence timer and removes only the managed login bridge. The desktop shortcut remains available to bring him back. It leaves all learned state intact. Run `install` again to re-enable persistent startup. `--part core` or `--part desktop` restricts a control operation to that component; starting the desktop also requests its core dependency.
 
 ## Verification
 

@@ -17,7 +17,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from terminus.supervision import notify
+from terminus.supervision import notify,set_paused
 
 DATA = ROOT/'.local'
 SESSION_KEYS = ('DISPLAY','XAUTHORITY','WAYLAND_DISPLAY','XDG_RUNTIME_DIR',
@@ -88,6 +88,8 @@ def run_desktop():
 
 def login():
     values = save_session(os.environ)
+    for role in ('core','desktop'):
+        set_paused(role,DATA,False)
     # Budgie does not activate graphical-session.target on this workstation.
     # XDG autostart therefore refreshes the session and starts our two units.
     subprocess.run(['systemctl','--user','import-environment',*values],check=True,timeout=10)
