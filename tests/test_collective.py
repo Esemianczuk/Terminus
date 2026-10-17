@@ -118,6 +118,8 @@ def test_bank_does_not_downgrade_when_network_or_checkout_is_stale(tmp_path,monk
     from terminus.collective import write_private
     current=merge(initial_bank(),[trained().release()])
     write_private(tmp_path/'collective-bank.json',current)
+    monkeypatch.setattr(agent,'ROOT',tmp_path/'checkout')
+    write_private(agent.ROOT/'community/bank.json',initial_bank())
     requests=[]
     def fetch(request,timeout):
         requests.append(request)
