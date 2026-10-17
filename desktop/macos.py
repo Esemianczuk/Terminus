@@ -42,17 +42,28 @@ class MacPresence:
         self.window.setStyleMask_(self.window.styleMask() | self.nonactivating_mask)
         self.window.setHidesOnDeactivate_(False)
         self.window.setLevel_(AppKit.NSFloatingWindowLevel)
-        self.window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
-                                          AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary)
+        self.collection_behavior = (AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                    AppKit.NSWindowCollectionBehaviorCanJoinAllApplications |
+                                    AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary |
+                                    AppKit.NSWindowCollectionBehaviorStationary)
+        self.window.setCollectionBehavior_(self.collection_behavior)
         # Cocoa can relocate a freshly shown tool window while its activation
         # policy changes. Reapply the Qt placement after that transition.
         position=widget.roam_position.toPoint() if widget.roam_position is not None else widget.pos()
         QtCore.QTimer.singleShot(150,lambda:widget.move(position))
+        QtCore.QTimer.singleShot(250,self.bring_forward)
         self.timer=QtCore.QTimer(widget)
         self.timer.timeout.connect(self.update_hit_test)
         self.last_interactive = None
         self.timer.start(60)
         self.update_hit_test()
+
+    def bring_forward(self):
+        """Reorder the existing nonactivating body on the current Space."""
+        import AppKit
+        self.window.setCollectionBehavior_(self.collection_behavior)
+        self.window.setLevel_(AppKit.NSFloatingWindowLevel)
+        self.window.orderFrontRegardless()
 
     def update_hit_test(self):
         local=self.widget.mapFromGlobal(QtGui.QCursor.pos())
@@ -68,4 +79,9 @@ class MacPresence:
                 'is_key':bool(self.window.isKeyWindow()),
                 'is_main':bool(self.window.isMainWindow()),
                 'nonactivating':bool(self.window.styleMask() & self.nonactivating_mask),
-                'ignores_mouse':bool(self.window.ignoresMouseEvents())}
+                'ignores_mouse':bool(self.window.ignoresMouseEvents()),
+                'cocoa_visible':bool(self.window.isVisible()),
+                'on_active_space':bool(self.window.isOnActiveSpace()),
+                'collection_behavior':int(self.window.collectionBehavior()),
+                'level':int(self.window.level()),
+                'window_class':str(self.window.className())}

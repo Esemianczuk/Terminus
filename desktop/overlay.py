@@ -2062,13 +2062,20 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, lambda signum, frame: app.quit())
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())
     permission_request = {"pending": False}
+    bring_request = {"pending": False}
     if sys.platform == "darwin" and not args.smoke_test:
         signal.signal(signal.SIGUSR1, lambda signum, frame: permission_request.__setitem__("pending", True))
+        signal.signal(signal.SIGUSR2, lambda signum, frame: bring_request.__setitem__("pending", True))
 
     def process_permission_request():
         if permission_request["pending"]:
             permission_request["pending"] = False
             overlay.request_mac_input_monitoring()
+        if bring_request["pending"]:
+            bring_request["pending"] = False
+            overlay.reposition("lower-right")
+            if mac_presence is not None:
+                mac_presence.bring_forward()
 
     signal_pump = QtCore.QTimer(app)
     signal_pump.timeout.connect(process_permission_request)

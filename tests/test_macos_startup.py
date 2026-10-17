@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from desktop.macos import prepare_macos_environment,configure_macos_application
+from desktop.macos import MacPresence,prepare_macos_environment,configure_macos_application
 from desktop.macos_permission import request_input_monitoring
 
 class MacStartupTests(unittest.TestCase):
@@ -38,6 +38,18 @@ class MacStartupTests(unittest.TestCase):
             self.assertTrue(request_input_monitoring())
         self.assertEqual(calls,[True])
         load.assert_called_once_with('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+
+    def test_bring_forward_orders_only_the_nonactivating_body(self):
+        calls=[]
+        window=SimpleNamespace(setCollectionBehavior_=lambda value:calls.append(('collection',value)),
+                               setLevel_=lambda value:calls.append(('level',value)),
+                               orderFrontRegardless=lambda:calls.append(('front',)))
+        presence=MacPresence.__new__(MacPresence)
+        presence.window=window
+        presence.collection_behavior=262417
+        with patch.dict(sys.modules,{'AppKit':SimpleNamespace(NSFloatingWindowLevel=3)}):
+            presence.bring_forward()
+        self.assertEqual(calls,[('collection',262417),('level',3),('front',)])
 
 
 if __name__=='__main__':unittest.main()
