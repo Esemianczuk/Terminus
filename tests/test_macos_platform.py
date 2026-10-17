@@ -20,6 +20,7 @@ def test_launch_agents_keep_native_processes_and_use_actual_checkout():
         if role in {'core','desktop'}:assert value['KeepAlive'] is True
         else:assert value['StartInterval'] in (30,600) and 'KeepAlive' not in value
     assert '--allow-network' not in mac.definition('core',root)['ProgramArguments']
+    assert mac.definition('desktop',root)['ProgramArguments'][2:4]==['--renderer','raster']
 
 
 def test_launchd_properties_use_our_plist_and_parse_only_the_main_pid(tmp_path,monkeypatch):

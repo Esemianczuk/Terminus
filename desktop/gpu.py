@@ -205,8 +205,14 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         self.artwork=None
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_AlwaysStackOnTop, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # QQuickWidget renders into an offscreen surface. The top-level window
+        # is translucent, so its composited child must request alpha too.
+        # WA_AlwaysStackOnTop is only for seeing sibling widgets underneath a
+        # QQuickWidget; it breaks normal stacking for this single-scene panel.
+        surface_format = self.format()
+        surface_format.setAlphaBufferSize(8)
+        self.setFormat(surface_format)
         self.setClearColor(QtGui.QColor(0, 0, 0, 0))
         self.setResizeMode(QtQuickWidgets.QQuickWidget.ResizeMode.SizeRootObjectToView)
         self.quickWindow().sceneGraphError.connect(self._graphics_error)

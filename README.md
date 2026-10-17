@@ -10,7 +10,7 @@ There is a little learning behind it. Repeated events become familiar. A small r
 
 ## Install
 
-Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics, including ordinary integrated graphics. There is a simpler raster fallback if the graphics backend cannot start. No model download or cloud inference account is needed.
+Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics, including ordinary integrated graphics. The Mac launch agent currently uses the raster renderer because the Qt/Metal scenegraph can report healthy frames while its transparent desktop panel stays invisible. The GPU renderer remains available for direct testing with `--renderer gpu`. No model download or cloud inference account is needed.
 
 ```sh
 git clone https://github.com/Esemianczuk/Terminus.git

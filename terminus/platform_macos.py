@@ -75,7 +75,10 @@ def action(role,operation,root,data,scale=None):
 def definition(role,root):
     root=Path(root);python=str(root/'.venv/bin/python');data=root/'.local'
     commands={'core':[python,'-m','terminus','serve','--data-dir',str(data)],
-              'desktop':[python,str(root/'desktop/overlay.py'),'--data-dir',str(data),
+              # The Qt/Metal scenegraph can render frames while its translucent
+              # QNSPanel presents no pixels. Raster is the verified Mac default
+              # until the GPU composition path is confirmed on a live desktop.
+              'desktop':[python,str(root/'desktop/overlay.py'),'--renderer','raster','--data-dir',str(data),
                          '--status-file',str(data/'desktop-status.json'),'--capture-file',str(data/'desktop-presence.png')],
               'presence':[python,str(root/'scripts/bring_back.py'),'--guardian'],
               'collective':[python,str(root/'scripts/collective.py'),'sync']}
