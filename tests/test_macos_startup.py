@@ -85,5 +85,37 @@ assert events == ['gpu','native-panel'], events
             presence.bring_forward()
         self.assertEqual(calls,[('collection',262417),('level',21),('front',)])
 
+    def test_presentation_capture_uses_only_this_native_window_and_releases_it(self):
+        calls=[]
+        api=SimpleNamespace(CGWindowListCreateImage=lambda rect,options,window,flags:
+                            calls.append(('capture',options,window,flags)) or 73,
+                            CGImageGetWidth=lambda image:2,CGImageGetHeight=lambda image:2,
+                            reduce=lambda image,w,h:bytes((255,0,0,255,0,0,0,0)*2),
+                            release=lambda image:calls.append(('release',image)))
+        presence=MacPresence.__new__(MacPresence)
+        presence.window=SimpleNamespace(windowNumber=lambda:321,isVisible=lambda:True)
+        with patch('desktop.background_macos._CoreGraphics',return_value=api):
+            image=presence.capture_image()
+        self.assertFalse(image.isNull())
+        self.assertEqual(image.pixelColor(0,0).red(),255)
+        self.assertEqual(image.pixelColor(1,0).alpha(),0)
+        self.assertEqual(calls,[('capture',8,321,1),('release',73)])
+        self.assertTrue(presence.presentation_capture['presented'])
+        self.assertEqual(presence.presentation_capture['visible_pixels'],2)
+
+    def test_invisible_native_panel_is_not_confirmed_by_an_internal_frame(self):
+        released=[]
+        api=SimpleNamespace(CGWindowListCreateImage=lambda *args:73,
+                            CGImageGetWidth=lambda image:2,CGImageGetHeight=lambda image:2,
+                            reduce=lambda image,w,h:bytes(16),release=released.append)
+        presence=MacPresence.__new__(MacPresence)
+        presence.window=SimpleNamespace(windowNumber=lambda:321,isVisible=lambda:True)
+        with patch('desktop.background_macos._CoreGraphics',return_value=api):
+            image=presence.capture_image()
+        self.assertTrue(image.isNull())
+        self.assertFalse(presence.presentation_capture['presented'])
+        self.assertEqual(presence.presentation_capture['reason'],'own_panel_has_no_visible_pixels')
+        self.assertEqual(released,[73])
+
 
 if __name__=='__main__':unittest.main()

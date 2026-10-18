@@ -1,6 +1,7 @@
 """launchd definitions and ownership checks without operating real agents."""
 from pathlib import Path
 import plistlib
+import subprocess
 import pytest
 from terminus import platform_macos as mac
 
@@ -41,6 +42,37 @@ def test_start_bootstraps_once_and_does_not_force_restart_an_existing_app(monkey
     mac.start('desktop')
     assert calls[-1]==('kickstart',mac.domain()+'/org.terminus.desktop')
     assert not any('-k' in args or 'bootstrap' in args for args in calls)
+
+
+@pytest.mark.parametrize('mismatch',[None,'path','working directory','program','label'])
+def test_bootstrap_guardian_race_is_accepted_only_for_the_exact_owned_job(tmp_path,monkeypatch,mismatch):
+    path=tmp_path/'org.terminus.desktop.plist'
+    expected=mac.definition('desktop',tmp_path/'Terminus')
+    path.write_bytes(plistlib.dumps(expected))
+    monkeypatch.setattr(mac,'paths',lambda role:path)
+    calls=[];prints=[]
+    def call(*arguments,**kwargs):
+        calls.append(arguments)
+        if arguments[0]=='bootstrap':
+            raise subprocess.CalledProcessError(5,arguments,stderr='Bootstrap failed: 5')
+        if arguments[0]=='print':
+            prints.append(True)
+            if len(prints)==1:return subprocess.CompletedProcess(arguments,113,'','missing')
+            fields={'path':str(path),'working directory':expected['WorkingDirectory'],
+                    'program':expected['ProgramArguments'][0]}
+            label=mac.domain()+'/org.terminus.desktop'
+            if mismatch=='label':label='gui/501/unrelated'
+            elif mismatch:fields[mismatch]='unrelated'
+            report=label+' = {\n'+''.join('\t'+key+' = '+value+'\n' for key,value in fields.items())+'}\n'
+            return subprocess.CompletedProcess(arguments,0,report,'')
+        return subprocess.CompletedProcess(arguments,0,'','')
+    monkeypatch.setattr(mac,'call',call)
+    if mismatch:
+        with pytest.raises(subprocess.CalledProcessError):mac.start('desktop')
+        assert not any(command[0]=='kickstart' for command in calls)
+    else:
+        mac.start('desktop')
+        assert calls[-1]==('kickstart',mac.domain()+'/org.terminus.desktop')
 
 
 def test_recovery_shortcut_restarts_unresponsive_owned_components(tmp_path,monkeypatch):

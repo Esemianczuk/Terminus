@@ -2236,9 +2236,12 @@ def main(argv=None):
             captured["since"] = captured["since"] or time.monotonic()
             if time.monotonic() - captured["since"] >= 1 and time.monotonic() - overlay.started >= 5:
                 args.capture_file.parent.mkdir(parents=True, exist_ok=True)
-                # This captures only our own widget, never another application.
+                # On Cocoa inspect our actual NSPanel presentation. A widget
+                # grab alone can hide a broken Metal-to-window composition path.
+                # Both paths capture only Terminus, never another application.
                 captured["done"] = True
-                captured["saved"] = overlay.grab().save(str(args.capture_file), "PNG")
+                image=mac_presence.capture_image() if mac_presence is not None else overlay.grab()
+                captured["saved"] = image.save(str(args.capture_file), "PNG")
 
     status_timer = QtCore.QTimer(app)
     status_timer.timeout.connect(report_view)

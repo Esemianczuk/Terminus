@@ -41,7 +41,28 @@ def start(role):
     label=domain()+'/'+LABELS[role]
     if call('print',label,check=False).returncode:
         call('enable',label)
-        call('bootstrap',domain(),str(paths(role)))
+        try:
+            call('bootstrap',domain(),str(paths(role)))
+        except subprocess.CalledProcessError:
+            # The presence guardian can bootstrap this exact job after our
+            # initial print. Only accept that race after verifying the loaded
+            # label, plist, working directory and executable all still match.
+            loaded=call('print',label,check=False)
+            try:
+                expected=plistlib.loads(paths(role).read_bytes())
+                fields={}
+                for line in loaded.stdout.splitlines():
+                    if line.startswith('\t') and not line.startswith('\t\t'):
+                        key,separator,value=line.strip().partition(' = ')
+                        if separator:fields[key]=value
+                same=(loaded.returncode==0 and loaded.stdout.splitlines()[0]==label+' = {'
+                      and expected.get('Label')==LABELS[role]
+                      and fields.get('path')==str(paths(role))
+                      and fields.get('working directory')==expected.get('WorkingDirectory')
+                      and fields.get('program')==(expected.get('ProgramArguments') or [None])[0])
+            except (OSError,ValueError,IndexError):
+                same=False
+            if not same:raise
     call('kickstart',label)
 
 
