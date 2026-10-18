@@ -279,7 +279,7 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
                   clock=0, skin_weights=(.64,.20,.16,0), skin_intensity=.75, opacity=1,
                   graph_gain=2.8, nodes=(), edges=(), tendrils=(), glyphs=(), status=None,
                   morph_strength=1, body_visible=True, desktop_rects=(), cursor=None,
-                  mic_active=False,skin_clock=None):
+                  mic_active=False,skin_clock=None,gaze_atlas=None,gaze_shift=(0,0,0,0)):
         if not self.available:
             return False
         started = time.perf_counter()
@@ -288,11 +288,24 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
             return False
         index = max(0, min(int(index), entry["count"] - 1))
         following = (index+1) % entry["count"] if entry["loop"] else min(index+1,entry["count"]-1)
+        gaze_ready=gaze_atlas is not None and gaze_atlas.ensure_texture(clip)
         if clip != self.current_clip:
             if self.artwork.cached_clip!=clip:self.artwork.clear_hit_cache()
             for property_name, suffix in (("bodySourceUrl","body"),("forwardSourceUrl","forward"),("backwardSourceUrl","backward")):
                 self._set(property_name, QtCore.QUrl.fromLocalFile(str(self.asset_root / f"{clip}-{suffix}.png")).toString())
+            if gaze_ready:
+                self._set("gazeSourceUrl",QtCore.QUrl.fromLocalFile(str(gaze_atlas.path.parent / f"{clip}.png")).toString())
+            else:
+                self._set("gazeSourceUrl",QtCore.QUrl.fromLocalFile(str(self.asset_root / "glow.png")).toString())
             self.current_clip = clip
+        first_gaze=gaze_atlas.rect(clip,index) if gaze_ready else None
+        second_gaze=gaze_atlas.rect(clip,following) if gaze_ready else None
+        if first_gaze is None or second_gaze is None:
+            first_gaze=second_gaze=(0.,0.,1.,1.)
+            gaze_shift=(0.,0.,0.,0.)
+        self._set("firstGazeRect",QtGui.QVector4D(*first_gaze))
+        self._set("secondGazeRect",QtGui.QVector4D(*second_gaze))
+        self._set("eyeShift",QtGui.QVector4D(gaze_shift[0]/384,gaze_shift[1]/416,gaze_shift[2]/384,gaze_shift[3]/416))
         for key, value in (("firstRect",entry["body_rects"][index]),("secondRect",entry["body_rects"][following]),
                            ("firstFlowRect",entry["flow_rects"][index]),("secondFlowRect",entry["flow_rects"][following]),
                            ("bodyRect",body_rect),("pigment",skin_weights)):

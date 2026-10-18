@@ -430,12 +430,14 @@ class OverlayTests(unittest.TestCase):
 
         painter = SingleFramePainter()
         widget.draw_body(painter, landed_at)
-        self.assertEqual(painter.images, [widget.skin.result])
+        self.assertEqual(len(painter.images), 1)
+        self.assertEqual(painter.images[0].size(), widget.skin.result.size())
         self.assertTrue(widget.skin.mask_valid)
         widget.skin.mode = "off"
         painter.images.clear()
         widget.draw_body(painter, landed_at)
-        self.assertEqual(painter.images, [widget.clip_sample.image])
+        self.assertEqual(len(painter.images), 1)
+        self.assertEqual(painter.images[0].size(), widget.clip_sample.image.size())
         self.assertAlmostEqual(abs(painter.transform.m11()), 1., places=6)
 
     def test_living_skin_changes_only_the_body_and_persists_its_controls(self):

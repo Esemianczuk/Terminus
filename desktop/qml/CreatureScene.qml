@@ -18,11 +18,15 @@ Item {
     property string bodySourceUrl: ""
     property string forwardSourceUrl: ""
     property string backwardSourceUrl: ""
+    property string gazeSourceUrl: ""
     property string glowSourceUrl: ""
     property vector4d firstRect: Qt.vector4d(0,0,1,1)
     property vector4d secondRect: Qt.vector4d(0,0,1,1)
     property vector4d firstFlowRect: Qt.vector4d(0,0,1,1)
     property vector4d secondFlowRect: Qt.vector4d(0,0,1,1)
+    property vector4d firstGazeRect: Qt.vector4d(0,0,1,1)
+    property vector4d secondGazeRect: Qt.vector4d(0,0,1,1)
+    property vector4d eyeShift: Qt.vector4d(0,0,0,0)
     property vector4d bodyRect: Qt.vector4d(120,20,192,208)
     property vector4d pigment: Qt.vector4d(.64,.20,.16,0)
     property vector2d flowRange: Qt.vector2d(64/384,64/416)
@@ -183,16 +187,21 @@ Item {
             Image { id: bodySource; visible: false; source: scene.bodySourceUrl; cache: false; smooth: true }
             Image { id: forwardSource; visible: false; source: scene.forwardSourceUrl; cache: false; smooth: true }
             Image { id: backwardSource; visible: false; source: scene.backwardSourceUrl; cache: false; smooth: true }
+            Image { id: gazeSource; visible: false; source: scene.gazeSourceUrl; cache: false; smooth: true }
             ShaderEffect {
                 id: bodyEffect
                 anchors.fill: parent
                 property variant bodyAtlas: bodySource
                 property variant forwardAtlas: forwardSource
                 property variant backwardAtlas: backwardSource
+                property variant gazeAtlas: gazeSource
                 property vector4d firstRect: scene.firstRect
                 property vector4d secondRect: scene.secondRect
                 property vector4d firstFlowRect: scene.firstFlowRect
                 property vector4d secondFlowRect: scene.secondFlowRect
+                property vector4d firstGazeRect: scene.firstGazeRect
+                property vector4d secondGazeRect: scene.secondGazeRect
+                property vector4d eyeShift: scene.eyeShift
                 property vector4d skinWeights: scene.pigment
                 property vector2d flowRange: scene.flowRange
                 property real phase: scene.phase

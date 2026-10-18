@@ -4,7 +4,7 @@ A small cuttlefish who lives on your desktop and minds his own business. Mostly.
 
 ![Terminus resting, swimming and changing color on his memory graph](docs/screenshots/terminus.gif)
 
-He naps on a glowing graph, reaches toward things that hold his attention, and sometimes wanders off to inspect a corner of the screen. Carry him around and he swims. His skin shifts through shimmer, moving bands of color, camouflage and a deep red display. A sustained spell of typing can wake him; a pause can send him out for a small look around. He occasionally leaves a few signs in a made-up language.
+He naps on a glowing graph, reaches toward things that hold his attention, and sometimes wanders off to inspect a corner of the screen. His eyes can follow the pointer, study a graph node, or settle into a private little stare. Carry him around and he swims. His skin shifts through shimmer, moving bands of color, camouflage and a deep red display. A sustained spell of typing can wake him; a pause can send him out for a small look around. He occasionally leaves a few signs in a made-up language.
 
 There is a little learning behind it. Repeated events become familiar. A small recurrent model learns short event patterns, and connections in the graph influence where his attention goes. He keeps that history between runs. The animations give those changes a body.
 
@@ -108,7 +108,7 @@ node --test tests/*.test.mjs
 
 The GIF above is a controlled preview from the native GPU renderer. Original art and animation sources are documented in [the art notes](docs/ART.md). The checked-in GPU assets are ready to use; rebuilding optical flow needs only the optional art tools, and happens outside the running creature. Runtime memory, keys and local configuration stay out of the repository.
 
-[Architecture](docs/ARCHITECTURE.md) · [Renderer](docs/GPU_RENDERING.md) · [Behavior](docs/ETHOLOGY.md) · [Skin effects](docs/LIVING_SKIN.md) · [Desktop awareness](docs/DESKTOP_AWARENESS.md)
+[Architecture](docs/ARCHITECTURE.md) · [Renderer](docs/GPU_RENDERING.md) · [Behavior](docs/ETHOLOGY.md) · [Skin effects](docs/LIVING_SKIN.md) · [Eye gaze](docs/GAZE.md) · [Desktop awareness](docs/DESKTOP_AWARENESS.md)
 
 ## License
 

@@ -8,6 +8,9 @@ layout(std140, binding = 0) uniform buf {
     vec4 secondRect;
     vec4 firstFlowRect;
     vec4 secondFlowRect;
+    vec4 firstGazeRect;
+    vec4 secondGazeRect;
+    vec4 eyeShift;
     vec4 skinWeights;
     vec2 flowRange;
     float phase;
@@ -18,6 +21,7 @@ layout(std140, binding = 0) uniform buf {
 layout(binding = 1) uniform sampler2D bodyAtlas;
 layout(binding = 2) uniform sampler2D forwardAtlas;
 layout(binding = 3) uniform sampler2D backwardAtlas;
+layout(binding = 4) uniform sampler2D gazeAtlas;
 
 vec2 atlasUv(vec2 uv, vec4 rect) { return rect.xy + clamp(uv, vec2(0.0), vec2(1.0)) * rect.zw; }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -38,12 +42,16 @@ void main() {
     vec2 bwd = (reverse.rg*255.0-128.0)/127.0 * ubuf.flowRange;
     float warp = ubuf.morphStrength * confidence;
     vec2 ua = uv-t*fwd*warp, ub = uv-(1.0-t)*bwd*warp;
-    vec4 first = texture(bodyAtlas, atlasUv(ua, ubuf.firstRect));
-    vec4 second = texture(bodyAtlas, atlasUv(ub, ubuf.secondRect));
+    vec2 eyeAField = texture(gazeAtlas, atlasUv(ua, ubuf.firstGazeRect)).rg;
+    vec2 eyeBField = texture(gazeAtlas, atlasUv(ub, ubuf.secondGazeRect)).rg;
+    vec2 eyeAOffset = eyeAField.x*ubuf.eyeShift.xy + eyeAField.y*ubuf.eyeShift.zw;
+    vec2 eyeBOffset = eyeBField.x*ubuf.eyeShift.xy + eyeBField.y*ubuf.eyeShift.zw;
+    vec4 first = texture(bodyAtlas, atlasUv(ua-eyeAOffset, ubuf.firstRect));
+    vec4 second = texture(bodyAtlas, atlasUv(ub-eyeBOffset, ubuf.secondRect));
     vec4 source;
-    // Exact endpoints preserve the authored image, including eye/alpha bytes.
-    if (t <= 0.00001) source = texture(bodyAtlas, atlasUv(uv, ubuf.firstRect));
-    else if (t >= .99999) source = texture(bodyAtlas, atlasUv(uv, ubuf.secondRect));
+    // At rest the displacement is exactly zero; the authored eye bytes remain.
+    if (t <= 0.00001) source = first;
+    else if (t >= .99999) source = second;
     else source = mix(first, second, t);
     if (source.a <= .001) { fragColor = vec4(0.0); return; }
     float eyeA = texture(forwardAtlas, atlasUv(ua, ubuf.firstFlowRect)).b;

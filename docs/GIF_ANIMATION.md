@@ -16,6 +16,8 @@ The approved clean PNG poses remain the artwork source. `scripts/build_animation
 
 `scripts/build_gpu_assets.py` computes forward and reverse optical flow between adjacent key poses, with consistency confidence and bounded displacement. It packs body images and low-resolution motion/eye data into immutable atlases under `web/assets/gpu/`. Texture gutters isolate adjacent tiles. A source-hash mismatch stops construction. This is an offline CPU build, not a task run by the resident creature.
 
+The irises can move within the original painted eyes. [Gaze registration](GAZE.md) carries a small aperture field from each source pose through this same rig, including blink frames. The field moves existing iris, sclera and highlight pixels together; closed eyes have no motion field.
+
 `desktop/gpu.py` provides validated timing metadata to the existing monotonic clip player. The normal GPU path does not decode the whole GIF bank into its image cache. Qt Quick's scene graph draws the graph and supporting limbs; `desktop/shaders/body.frag` uses the atlas phase to warp and interpolate the neighboring body poses, then applies [eye-protected skin coloration](LIVING_SKIN.md). Pose endpoints retain the authored source sampling. The result is an approximate optical-flow morph, with uncertain motion attenuated rather than treated as anatomical knowledge.
 
 The shader is baked into a portable QSB package for Qt's graphics backends, including Metal and OpenGL. The scene and assets are suitable for reuse in a future mobile client, but this repository does not ship Android or iOS applications. Playback and material updates have one caller-controlled clock, with no QML animation timers or independent learner.
@@ -24,6 +26,7 @@ The shader is baked into a portable QSB package for Qt's graphics backends, incl
 # Only needed after deliberately changing source art or registrations:
 uv run --extra art --extra desktop python scripts/build_animation_clips.py
 uv run --extra art --extra desktop python scripts/build_skin_atlas.py
+uv run --extra art --extra desktop python scripts/build_gaze_assets.py
 uv run --extra art --extra desktop python scripts/build_gpu_assets.py
 uv run --extra desktop python scripts/build_shaders.py
 ```

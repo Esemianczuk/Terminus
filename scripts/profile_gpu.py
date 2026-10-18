@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from PySide6 import QtCore,QtWidgets
 from desktop.gpu import GpuScene
+from desktop.gaze import GazeAtlas
 
 
 def main():
@@ -44,6 +45,7 @@ def main():
     view.setGeometry(parent.rect())
     if not view.available:
         raise SystemExit(json.dumps(view.diagnostics()))
+    gaze=GazeAtlas(ROOT/'web/assets/gaze/manifest.json',view.playback_library())
     nodes=[dict(id=str(i),x=55+i%6*65,y=175+i//6*39,activation=.2+(i%5)*.13,focus=i==9,contact=i in (8,10,14)) for i in range(24)]
     edges=[]
     for i in range(24):
@@ -71,7 +73,8 @@ def main():
             position-=delay; index+=1
         index=min(index,clip['count']-1)
         view.set_scene(clip=args.clip,index=index,phase=position/clip['delays_ms'][index],body_rect=(120,24,192,208),clock=elapsed,
-                       nodes=nodes,edges=edges,tendrils=arms,skin_weights=(.2,.6,.2,0),skin_intensity=.8)
+                       nodes=nodes,edges=edges,tendrils=arms,skin_weights=(.2,.6,.2,0),skin_intensity=.8,
+                       gaze_atlas=gaze,gaze_shift=(2.4,-.6,2.4,-.6))
         # Ignore initial PNG texture decode/upload while recording steady state.
         if elapsed>1:samples.append(view.upload_ms)
         if elapsed>=args.seconds:

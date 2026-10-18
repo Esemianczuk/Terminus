@@ -88,6 +88,8 @@ uv run --extra art --extra desktop python scripts/build_gpu_assets.py
 uv run --extra desktop python scripts/build_shaders.py
 ```
 
+The iris field is a separate registered texture in `web/assets/gaze/`. Rebuild it with `scripts/build_gaze_assets.py` after changing source art or eye annotations. See [Eye gaze](GAZE.md) for the full authoring order.
+
 To profile a presentation fixture with the real desktop's graphics backend:
 
 ```sh
