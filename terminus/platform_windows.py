@@ -104,6 +104,9 @@ foreach ($entry in $folder.GetTasks(0)) {{
         throw 'Terminus task folder contains an unrelated job; permissions were not changed.'
     }}
 }}
+# Convert inherited rights on existing owned jobs before protecting the folder.
+# Otherwise the CIM registrar can deny updates to an older periodic task.
+foreach ($entry in $folder.GetTasks(0)) {{ $entry.SetSecurityDescriptor($security, 0) }}
 $folder.SetSecurityDescriptor($security, 0)
 $old = Get-ScheduledTask -TaskPath '\Terminus\' -TaskName {ps_string(role)} -ErrorAction SilentlyContinue
 if ($old -and $old.Description -ne {ps_string(marker(root))}) {{ throw 'Task belongs to another checkout.' }}
