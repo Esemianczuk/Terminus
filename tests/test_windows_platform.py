@@ -95,3 +95,15 @@ def test_windows_observer_never_polls_or_hooks_keys():
     source=(Path(__file__).parents[1]/'desktop/perception_windows.py').read_text()
     for name in ('GetAsyncKeyState','GetKeyboardState','SetWindowsHookEx','RegisterRawInputDevices','GetWindowText','SendInput'):
         assert name not in source
+
+
+def test_native_mouse_activation_guard_uses_the_actual_win32_message_layout():
+    import ctypes as C
+    from ctypes import wintypes as W
+    from types import SimpleNamespace
+    from desktop.windows import WindowsPresence
+    message=W.MSG();message.hWnd=77;message.message=0x21
+    owner=SimpleNamespace(hwnd=77)
+    assert WindowsPresence.nativeEventFilter(owner,b'windows_generic_MSG',C.addressof(message))==(True,3)
+    message.hWnd=88
+    assert WindowsPresence.nativeEventFilter(owner,b'windows_generic_MSG',C.addressof(message))==(False,0)

@@ -30,7 +30,7 @@ class WindowsPresence(QtCore.QAbstractNativeEventFilter):
 
     def nativeEventFilter(self, event_type, message):
         msg=W.MSG.from_address(int(message))
-        if msg.hwnd==self.hwnd and msg.message==0x21:  # WM_MOUSEACTIVATE
+        if msg.hWnd==self.hwnd and msg.message==0x21:  # WM_MOUSEACTIVATE
             return True,3  # MA_NOACTIVATE: allow the click, never keyboard focus.
         return False,0
 
