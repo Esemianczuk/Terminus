@@ -676,7 +676,7 @@ class Overlay(QtWidgets.QWidget):
     @staticmethod
     def awareness_supported():
         session = os.environ.get("XDG_SESSION_TYPE", "")
-        return sys.platform == "darwin" and QtWidgets.QApplication.platformName() == "cocoa" or (QtWidgets.QApplication.platformName() == "xcb" and bool(os.environ.get("DISPLAY"))
+        return sys.platform == "win32" and QtWidgets.QApplication.platformName() == "windows" or sys.platform == "darwin" and QtWidgets.QApplication.platformName() == "cocoa" or (QtWidgets.QApplication.platformName() == "xcb" and bool(os.environ.get("DISPLAY"))
                 and session != "wayland" and not (os.environ.get("WAYLAND_DISPLAY") and session != "x11"))
 
     def poll_awareness(self):
@@ -721,7 +721,7 @@ class Overlay(QtWidgets.QWidget):
                           "focused_window": window, "typing": clean_typing,
                           "typing_available": typing_available,
                           "caret": None if snapshot.get("secure_entry") is True else rectangle(snapshot.get("caret")),
-                          "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "mac-readonly", "unavailable"} else "unavailable",
+                          "source": snapshot.get("source") if snapshot.get("source") in {"x11-xinput2", "mac-readonly", "windows-readonly", "unavailable"} else "unavailable",
                           "permission": snapshot.get("permission") if snapshot.get("permission") in {"local-observation", "disabled", "unsupported"} else "unsupported",
                           "caret_source": snapshot.get("caret_source") if snapshot.get("caret_source") in {"at-spi", "window-fallback"} else "window-fallback"}
         # Geometry stays in this view. The core receives sparse fixed-category
@@ -1385,7 +1385,7 @@ class Overlay(QtWidgets.QWidget):
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
             region = region.united(region.translated(dx, dy))
         self.input_region = region
-        if sys.platform != "darwin":
+        if sys.platform not in {"darwin", "win32"}:
             gpu=self.gpu_scene is not None and self.gpu_scene.available
             if self.native_input_shape is not None and self.native_input_shape.available:
                 if not self.native_input_shape.set_region(region):
@@ -2001,7 +2001,7 @@ class Overlay(QtWidgets.QWidget):
             set_paused("desktop", self.client.data_dir, True)
             if sys.platform == "darwin":
                 QtCore.QProcess.startDetached("launchctl", ["bootout", f"gui/{os.getuid()}/org.terminus.desktop"])
-            else:
+            elif sys.platform != "win32":
                 QtCore.QProcess.startDetached("systemctl", ["--user", "--no-block", "stop", "terminus-desktop.service"])
         QtWidgets.QApplication.quit()
 
@@ -2041,6 +2041,7 @@ class Overlay(QtWidgets.QWidget):
     def closeEvent(self, event):
         self.save_view_preferences()
         self.background.close()
+        if hasattr(self,"windows_presence"):self.windows_presence.close()
         if self.native_input_shape is not None:self.native_input_shape.close()
         self.animation.stop()
         self.asset_timer.stop()
@@ -2069,7 +2070,7 @@ class Overlay(QtWidgets.QWidget):
         return {"pid": os.getpid(), "updated_at": time.time(), "visible": self.isVisible(),
                 "isExposed": bool(handle and handle.isExposed()), "nativewinid": int(self.winId()),
                 "platform": QtWidgets.QApplication.platformName(),
-                "native_focus": self.mac_presence.diagnostics() if hasattr(self,"mac_presence") else None,
+                "native_focus": self.mac_presence.diagnostics() if hasattr(self,"mac_presence") else self.windows_presence.diagnostics() if hasattr(self,"windows_presence") else None,
                 "translucent": self.testAttribute(QtCore.Qt.WA_TranslucentBackground),
                 "topmost": bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint),
                 "frameless": bool(self.windowFlags() & QtCore.Qt.FramelessWindowHint),
@@ -2178,6 +2179,10 @@ def main(argv=None):
     if args.no_awareness:
         overlay.awareness_enabled = False
     overlay.show()
+    if sys.platform == "win32" and not args.smoke_test:
+        from desktop.windows import WindowsPresence
+        overlay.windows_presence = WindowsPresence(overlay)
+        overlay.clearMask()
     if app.platformName()=="xcb" and overlay.gpu_scene is not None:
         from desktop.x11_input import OwnWindowInputShape
         overlay.clearMask();QtGui.QGuiApplication.sync()
@@ -2200,6 +2205,13 @@ def main(argv=None):
         signal.signal(signal.SIGUSR2, lambda signum, frame: bring_request.__setitem__("pending", True))
 
     def process_permission_request():
+        if sys.platform == "win32" and not args.smoke_test:
+            if (args.data_dir/"windows-desktop.stop").exists():
+                app.quit()
+            request = args.data_dir/"windows-desktop.bring"
+            if request.exists():
+                request.unlink(missing_ok=True)
+                overlay.reposition("lower-right")
         if screen_permission_request["pending"]:
             screen_permission_request["pending"] = False
             overlay.request_screen_colors()

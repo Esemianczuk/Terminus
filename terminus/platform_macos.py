@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 
-LABELS={r:'org.terminus.'+r for r in ('core','desktop','presence','collective')}
+LABELS={r:'org.terminus.'+r for r in ('core','desktop','presence','collective','updates')}
 
 
 def domain():
@@ -102,7 +102,8 @@ def definition(role,root):
               'desktop':[python,str(root/'desktop/overlay.py'),'--renderer','auto','--data-dir',str(data),
                          '--status-file',str(data/'desktop-status.json'),'--capture-file',str(data/'desktop-presence.png')],
               'presence':[python,str(root/'scripts/bring_back.py'),'--guardian'],
-              'collective':[python,str(root/'scripts/collective.py'),'sync']}
+              'collective':[python,str(root/'scripts/collective.py'),'sync'],
+              'updates':[python,str(root/'scripts/update.py'),'--automatic']}
     definition={'Label':LABELS[role],'ProgramArguments':commands[role],'WorkingDirectory':str(root),
                 'RunAtLoad':True,'LimitLoadToSessionType':'Aqua','ThrottleInterval':3,'ExitTimeOut':15,
                 'EnvironmentVariables':{'PATH':'/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
@@ -112,7 +113,8 @@ def definition(role,root):
                 'StandardOutPath':str(data/('macos-'+role+'.log')),
                 'StandardErrorPath':str(data/('macos-'+role+'.log')),'Umask':63}
     if role in {'core','desktop'}:definition['KeepAlive']=True
-    else:definition['StartInterval']=30 if role=='presence' else 600
+    else:definition['StartInterval']={'presence':30,'collective':600,'updates':3600}[role]
+    if role=='updates':definition['RunAtLoad']=False
     return definition
 
 

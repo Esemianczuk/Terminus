@@ -485,9 +485,9 @@ class DesktopAwareness:
         if self.thread is not None or not self.enabled:
             return self
         session = self.environment.get("XDG_SESSION_TYPE", "")
-        if self.platform != "darwin" and (session == "wayland" or (self.environment.get("WAYLAND_DISPLAY") and session != "x11")):
+        if self.platform not in {"darwin", "win32"} and (session == "wayland" or (self.environment.get("WAYLAND_DISPLAY") and session != "x11")):
             self.current = self._empty("wayland_unsupported", "unsupported")
-        elif self.platform != "darwin" and not self.environment.get("DISPLAY"):
+        elif self.platform not in {"darwin", "win32"} and not self.environment.get("DISPLAY"):
             self.current = self._empty("x11_display_unavailable", "unsupported")
         else:
             target = self._run if self.backend_factory is not None or self.worker_mode else self._spawn_and_read
@@ -514,6 +514,9 @@ class DesktopAwareness:
                     except ModuleNotFoundError:
                         from perception_macos import MacMetadataBackend
                     factory = MacMetadataBackend
+                elif self.platform == "win32":
+                    from desktop.perception_windows import WindowsMetadataBackend
+                    factory = WindowsMetadataBackend
                 else:
                     factory = _XcbBackend
             backend = factory(self.stop_event, self.own_pid)
@@ -573,7 +576,7 @@ class DesktopAwareness:
         if (type(observed) not in (int, float) or not math.isfinite(observed)
                 or not 0 <= now - observed <= STALE_AFTER
                 or not isinstance(value.get("source"), str)
-                or value["source"] not in {"x11-xinput2", "mac-readonly", "unavailable"}):
+                or value["source"] not in {"x11-xinput2", "mac-readonly", "windows-readonly", "unavailable"}):
             return False
         allowed = {
             "typing": {"active", "last_at", "rate", "pulse", "sequence"},
@@ -639,11 +642,17 @@ class DesktopAwareness:
             environment["PYTHONNOUSERSITE"] = "1"
             self.process = self.popen([sys.executable, "-u", str(Path(__file__).resolve()), "--worker", str(self.own_pid)],
                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                      bufsize=0, close_fds=True, start_new_session=True, env=environment)
+                                      bufsize=0, close_fds=True, start_new_session=True, env=environment,
+                                      creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
             pending = bytearray()
             self.last_received = self.clock()
             while not self.stop_event.is_set():
-                ready, _, _ = select.select([self.process.stdout], [], [], .2)
+                if self.platform == "win32":
+                    from desktop.perception_windows import pipe_ready
+                    ready = pipe_ready(self.process.stdout)
+                    if not ready: self.stop_event.wait(.1)
+                else:
+                    ready, _, _ = select.select([self.process.stdout], [], [], .2)
                 if ready:
                     block = os.read(self.process.stdout.fileno(), 4096)
                     if not block:

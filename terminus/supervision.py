@@ -66,6 +66,9 @@ def installed(root, data):
 
 
 def properties(role):
+    if sys.platform == 'win32':
+        from .platform_windows import properties as windows_properties
+        return windows_properties(role)
     if sys.platform == 'darwin':
         from .platform_macos import properties as mac_properties
         return mac_properties(role)
@@ -108,6 +111,9 @@ def delegate(role, action, root, data, *, scale=None):
     """Existing manager CLIs hand control to systemd only after explicit install."""
     if not installed(root,data):
         return None
+    if sys.platform == 'win32':
+        from .platform_windows import action as windows_action
+        return windows_action(role,action,root,data,scale)
     if sys.platform == 'darwin':
         from .platform_macos import action as mac_action
         return mac_action(role,action,root,data,scale)

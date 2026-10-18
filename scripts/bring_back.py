@@ -2,7 +2,6 @@
 """Desktop button and quiet periodic guardian for this Terminus checkout."""
 from __future__ import annotations
 import argparse
-import fcntl
 import os
 from pathlib import Path
 import subprocess
@@ -11,6 +10,7 @@ import time
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+from terminus import filelock as fcntl
 from terminus import supervision as control
 from scripts.service_session import save_session
 
@@ -85,6 +85,8 @@ def bring_back():
 
 def notification(message, *, failure=False):
     try:
+        if sys.platform == 'win32':
+            return  # Recovery is windowless; details are in the local service log.
         if sys.platform == 'darwin':
             import json
             script='display notification '+json.dumps(message)+' with title \"Terminus\"'
@@ -110,13 +112,19 @@ def main():
                     notification('Already checking on the little fella.')
                 return 0
             if args.guardian:
-                if sys.platform == 'darwin':
+                if sys.platform == 'win32':
+                    from terminus.platform_windows import guardian as windows_guardian
+                    windows_guardian(ROOT)
+                elif sys.platform == 'darwin':
                     from terminus.platform_macos import guardian as mac_guardian
                     mac_guardian(ROOT)
                 else:
                     guardian()
             else:
-                if sys.platform == 'darwin':
+                if sys.platform == 'win32':
+                    from terminus.platform_windows import bring_back as windows_bring_back
+                    if windows_bring_back(ROOT):raise RuntimeError('Desktop presence is not yet confirmed.')
+                elif sys.platform == 'darwin':
                     from terminus.platform_macos import bring_back as mac_bring_back
                     if mac_bring_back(ROOT):raise RuntimeError('Desktop presence is not yet confirmed.')
                 else:

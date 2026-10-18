@@ -3,7 +3,6 @@
 from __future__ import annotations
 import argparse
 import base64
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,7 @@ import urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+from terminus import filelock as fcntl
 from terminus.collective import LocalLearner,MIN_SAMPLES,canonical,digest,validate_bank,validate_contribution,write_private
 
 URL='https://raw.githubusercontent.com/Esemianczuk/Terminus/main/community/bank.json'
@@ -56,7 +56,7 @@ def train(data,offline=False):
     learner=LocalLearner(public,saved)
     database=data/'organism.sqlite3'
     if database.is_file():
-        connection=sqlite3.connect('file:'+str(database.resolve())+'?mode=ro',uri=True,timeout=3)
+        connection=sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True,timeout=3)
         try:
             rows=connection.execute('SELECT seq,body FROM events WHERE seq>? ORDER BY seq LIMIT 512',(learner.last_sequence,)).fetchall()
             for sequence,body in rows:
@@ -101,30 +101,73 @@ def flush(data):
     return sent
 
 
-def relay(data,config):
-    """Optional existing SSH pairing relays only validated numeric packets."""
-    peer=config.get('peer_ssh');root=config.get('peer_root')
-    if not peer or not root:return 0
+def relay_command(peer):
+    """Build a command for the remote OS without interpolating a local shell."""
     import re
-    if not re.fullmatch(r'[A-Za-z0-9_.@-]{1,160}',peer) or not root.startswith('/'):
+    from pathlib import PureWindowsPath
+    host=peer.get('ssh','');root=peer.get('root','')
+    if not re.fullmatch(r'[A-Za-z0-9_.@-]{1,160}',host) or host.startswith('-') or any(c in root for c in '\r\n\0'):
         raise ValueError('Invalid private SSH relay configuration')
-    remote=' '.join(shlex.quote(x) for x in (root+'/.venv/bin/python',root+'/scripts/collective.py','relay-export'))
-    result=subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=5',peer,remote],capture_output=True,text=True,timeout=25)
-    if result.returncode:return 0
-    if len(result.stdout)>256*1024:raise ValueError('Oversized relay')
-    packets=json.loads(result.stdout)
-    if not isinstance(packets,list) or len(packets)>4:raise ValueError('Invalid relay batch')
-    for packet in packets:
-        validate_contribution(packet)
-        write_private(data/'collective-outbox'/(packet['id']+'.json'),packet)
-    return len(packets)
+    if peer.get('platform','posix')=='win32':
+        path=PureWindowsPath(root)
+        if not path.is_absolute():raise ValueError('Windows relay requires an absolute checkout path')
+        def quote(value):return "'"+str(value).replace("'","''")+"'"
+        script='& '+quote(path/'.venv/Scripts/python.exe')+' '+quote(path/'scripts/collective.py')+' relay-export'
+        remote='powershell.exe -NoProfile -NonInteractive -EncodedCommand '+base64.b64encode(script.encode('utf-16le')).decode()
+    else:
+        if not root.startswith('/'):raise ValueError('Relay requires an absolute checkout path')
+        remote=' '.join(shlex.quote(x) for x in (root+'/.venv/bin/python',root+'/scripts/collective.py','relay-export'))
+    return ['ssh','-o','BatchMode=yes','-o','ConnectTimeout=5',host,remote]
 
 
-def enable(data,publish=False,peer=None,peer_root=None):
-    config={'enabled':True,'publish':publish}
-    if peer:config.update(peer_ssh=peer,peer_root=peer_root)
+def configured_peers(config):
+    peers=list(config.get('peers',[]))
+    if config.get('peer_ssh'):
+        legacy={'ssh':config['peer_ssh'],'root':config.get('peer_root',''),'platform':'posix'}
+        if not any(p.get('ssh')==legacy['ssh'] for p in peers):peers.append(legacy)
+    if len(peers)>16:raise ValueError('Too many relay peers')
+    return peers
+
+
+def relay(data,config):
+    """Relay validated numerical packets from several independently learning hosts."""
+    count=0;reports=[];applied=set(bank(data,True)['applied'])
+    for peer in configured_peers(config):
+        report={'ssh':peer.get('ssh'),'received':0,'ok':False}
+        try:
+            result=subprocess.run(relay_command(peer),capture_output=True,text=True,timeout=30)
+            if result.returncode:raise OSError('SSH relay unavailable')
+            if len(result.stdout)>256*1024:raise ValueError('Oversized relay')
+            packets=json.loads(result.stdout)
+            if not isinstance(packets,list) or len(packets)>4:raise ValueError('Invalid relay batch')
+            packets=[validate_contribution(packet) for packet in packets]
+            for packet in packets:
+                if packet['id'] not in applied:
+                    write_private(data/'collective-outbox'/(packet['id']+'.json'),packet)
+            report.update(ok=True,received=len(packets));count+=len(packets)
+        except (OSError,ValueError,subprocess.SubprocessError) as error:
+            report['reason']=type(error).__name__
+        reports.append(report)
+    write_private(data/'collective-relay-status.json',{'checked_at':time.time(),'peers':reports})
+    return count
+
+
+def enable(data,publish=False,peer=None,peer_root=None,peer_platform='posix'):
+    path=data/'collective-config.json'
+    config=json.loads(path.read_text()) if path.is_file() else {}
+    config.update(enabled=True,publish=publish)
+    peers=configured_peers(config)
+    if peer:
+        entry={'ssh':peer,'root':peer_root or '', 'platform':peer_platform}
+        relay_command(entry)  # Validate before writing config or installing a timer.
+        peers=[p for p in peers if p.get('ssh')!=peer]+[entry]
+    config.pop('peer_ssh',None);config.pop('peer_root',None)
+    if peers:config['peers']=peers
     write_private(data/'collective-config.json',config)
-    if sys.platform=='darwin':
+    if sys.platform=='win32':
+        from terminus.platform_windows import register,start
+        register('collective',ROOT);start('collective',ROOT)
+    elif sys.platform=='darwin':
         from terminus.platform_macos import definition,paths,start
         import plistlib
         p=paths('collective');p.write_bytes(plistlib.dumps(definition('collective',ROOT)));p.chmod(0o600);start('collective')
@@ -163,10 +206,11 @@ def main():
     parser.add_argument('action',choices=('enable','sync','status','relay-export','disable'))
     parser.add_argument('--publish',action='store_true')
     parser.add_argument('--peer-ssh');parser.add_argument('--peer-root')
+    parser.add_argument('--peer-platform',choices=('posix','win32'),default='posix')
     parser.add_argument('--offline',action='store_true')
     args=parser.parse_args();data=ROOT/'.local';data.mkdir(exist_ok=True,mode=0o700)
     if args.action=='enable':
-        enable(data,args.publish,args.peer_ssh,args.peer_root)
+        enable(data,args.publish,args.peer_ssh,args.peer_root,args.peer_platform)
         print('Collective sharing enabled. Only fixed event categories enter the shared model.');return 0
     config_path=data/'collective-config.json'
     config=json.loads(config_path.read_text()) if config_path.is_file() else {}
@@ -175,6 +219,7 @@ def main():
     if args.action=='status':
         p=data/'collective-local.json';s=json.loads(p.read_text()) if p.is_file() else {}
         print(json.dumps({'enabled':config.get('enabled',False),'publishing':config.get('publish',False),
+                         'relay_peers':configured_peers(config),
                          'bank_round':s.get('base',{}).get('round',0),'local_category_observations':s.get('total',0),
                          'pending_observations':s.get('samples',0),'pending_contributions':len(list((data/'collective-outbox').glob('*.json')))},indent=2));return 0
     if not config.get('enabled'):
@@ -192,7 +237,9 @@ def main():
             print(json.dumps(packets,separators=(',',':')));return 0
         relayed=relay(data,config) if config.get('publish') else 0
         published=flush(data) if config.get('publish') else 0
-        print(json.dumps({'round':learner.base['round'],'local_category_observations':learner.total,'published':published,'relayed':relayed}));return 0
+        report={'round':learner.base['round'],'local_category_observations':learner.total,'published':published,'relayed':relayed,'synced_at':time.time()}
+        write_private(data/'collective-status.json',report)
+        print(json.dumps(report));return 0
 
 if __name__=='__main__':
     try:raise SystemExit(main())

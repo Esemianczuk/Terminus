@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import fcntl
+from . import filelock as fcntl
 from contextlib import suppress
 import os
 from pathlib import Path

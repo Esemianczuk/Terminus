@@ -3,7 +3,6 @@
 from __future__ import annotations
 from pathlib import Path
 import argparse
-import fcntl
 import json
 import os
 import signal
@@ -15,6 +14,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from terminus import filelock as fcntl
 from terminus.supervision import delegate
 DATA = ROOT / '.local'
 RECORD = DATA / 'managed-core.json'

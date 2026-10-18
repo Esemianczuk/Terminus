@@ -181,6 +181,9 @@ def main():
     parser.add_argument('--part',choices=('all','core','desktop'),default='all')
     args=parser.parse_args()
     try:
+        if sys.platform == 'win32':
+            from terminus.platform_windows import main as windows_main
+            return windows_main(ROOT,args)
         if sys.platform == 'darwin':
             from terminus.platform_macos import main as mac_main
             return mac_main(ROOT,args)
