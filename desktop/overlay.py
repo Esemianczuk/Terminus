@@ -1104,8 +1104,9 @@ class Overlay(QtWidgets.QWidget):
             image = self.skin.shade(self.clip_sample) if self.reference_renderer else self.clip_sample.image
             if self.gaze_atlas is not None:
                 sample=self.clip_sample
-                image = compose_eye_layers(image,self.gaze_atlas.frame(sample.clip,sample.index),
-                                           self.gaze_atlas.displacements(sample.clip,sample.index,self.gaze_shift))
+                shifts=self.gaze_atlas.displacements(sample.clip,sample.index,self.gaze_shift)
+                if max(abs(value) for value in shifts)>=.0001:
+                    image = compose_eye_layers(image,self.gaze_atlas.frame(sample.clip,sample.index),shifts)
             painter.drawImage(self.creature_rect, image)
         else:
             art = self.artwork()

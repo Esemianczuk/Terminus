@@ -44,6 +44,14 @@ class GpuAssetTests(unittest.TestCase):
                     count+=1
         self.assertEqual(count,129)
 
+    def test_closed_eye_clips_do_not_decode_or_upload_eye_materials(self):
+        registered=json.loads((ROOT/'web/assets/gaze/manifest.json').read_text())
+        atlas=SimpleNamespace(clips=registered['clips'],ensure_texture=lambda clip:(_ for _ in ()).throw(AssertionError('Closed eyes must not load materials')))
+        scene=SimpleNamespace(available=True,manifest=self.manifest,current_clip='sleep',asset_root=ASSETS,
+                              _set=lambda name,value:None)
+        self.assertTrue(GpuScene.set_scene(scene,clip='sleep',index=0,phase=0,body_rect=(0,0,192,208),gaze_atlas=atlas))
+        self.assertEqual(scene.eye_texture_bytes,0)
+
     def test_data_textures_are_opaque_and_bound_gpu_memory(self):
         for name,entry in self.manifest['clips'].items():
             with self.subTest(clip=name):

@@ -289,7 +289,9 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
             return False
         index = max(0, min(int(index), entry["count"] - 1))
         following = (index+1) % entry["count"] if entry["loop"] else min(index+1,entry["count"]-1)
-        gaze_ready=gaze_atlas is not None and gaze_atlas.ensure_texture(clip)
+        gaze_entry=gaze_atlas.clips.get(clip) if gaze_atlas is not None else None
+        gaze_ready=(gaze_entry is not None and any(max(pair)>0 for pair in gaze_entry['openness'])
+                    and gaze_atlas.ensure_texture(clip))
         if clip != self.current_clip:
             if self.artwork.cached_clip!=clip:self.artwork.clear_hit_cache()
             for property_name, suffix in (("bodySourceUrl","body"),("forwardSourceUrl","forward"),("backwardSourceUrl","backward")):
