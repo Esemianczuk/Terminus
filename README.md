@@ -46,7 +46,7 @@ The desktop window does not accept keyboard focus. Its optional observer runs in
 
 His skin can also dissolve partly into ASCII, or become a whole little creature made of symbols with his eyes still intact. Occasionally he lets out an ink cloud. It curls and thins over several seconds, with currents influenced by nearby window edges and motion. Move a window beneath him and the cloud responds. **Release an ink cloud** lets you try it; **Reduced motion** suppresses it. The fluid is a bounded procedural shader, so it needs no simulation grid or growing trail of particles.
 
-**Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back or sign in again.
+**Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back.
 
 The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Each connection keeps its own continuous travel phase, so a burst of activity brightens the flow without teleporting it. Their exact timing is animation, not a literal trace of each calculation. His body can bank and turn while the graph stays upright.
 

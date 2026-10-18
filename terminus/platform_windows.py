@@ -223,6 +223,11 @@ def action(role, operation, root, data, scale=None):
 
 def shortcut(root):
     root=Path(root)
+    from PySide6 import QtCore,QtGui
+    icon=root/'.local/terminus.ico'
+    artwork=QtGui.QImage(str(root/'web/assets/terminus-refined.png'))
+    if artwork.isNull() or not artwork.scaled(256,256,QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation).save(str(icon),'ICO'):
+        raise RuntimeError('Could not create the Terminus recovery icon')
     # Resolve Windows' actual Desktop (including OneDrive redirection).
     powershell(fr"""
 $path = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Bring Back Terminus.lnk'
@@ -233,6 +238,7 @@ $link.TargetPath = {ps_string(python_path(root,windowless=True))}
 $link.Arguments = {ps_string(subprocess.list2cmdline([str(root/'scripts/windows_service.py'),'recover']))}
 $link.WorkingDirectory = {ps_string(root)}
 $link.Description = {ps_string(marker(root))}
+$link.IconLocation = {ps_string(icon)}
 $link.WindowStyle = 7
 $link.Save()
 """)
