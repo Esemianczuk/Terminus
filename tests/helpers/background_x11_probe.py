@@ -45,7 +45,7 @@ for index,(widget,window) in enumerate(zip((source,body,alert),windows)):
     sample.composite.XCompositeRedirectWindow(sample.display,window,0)
     widget.show()
     prop(window,'WM_STATE',[1,0],'WM_STATE')
-    prop(window,'_NET_WM_DESKTOP',[0])
+    prop(window,'_NET_WM_DESKTOP',[0xffffffff if widget is source else 0])
     prop(window,'_NET_WM_PID',[os.getpid() if widget is body else os.getpid()+index+1])
 prop(sample.root,'_NET_CLIENT_LIST_STACKING',windows,'WINDOW')
 prop(sample.root,'_NET_CURRENT_DESKTOP',[0])

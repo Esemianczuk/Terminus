@@ -37,6 +37,17 @@ def test_bad_payload_cannot_keep_previous_palette_active():
     assert not math.isfinite(field.observed)
 
 
+def test_change_current_is_continuous_at_palette_arrival():
+    field=ColorField();field.sample(0)
+    before=field.change
+    field.receive({"available":True,"colors":[[1.,1.,1.]]*4},.5)
+    assert field.change==before
+    assert 0<field.sample(.533)["change"]<.5
+    before=field.change
+    field.receive({"available":True,"colors":[[1.,1.,1.]]*4},1.)
+    assert field.change==before
+
+
 class Process:
     def __init__(self):
         self.output=b"";self.kills=0;self.starts=0;self.writes=[]

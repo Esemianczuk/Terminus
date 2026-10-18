@@ -65,7 +65,9 @@ class X11Background:
         status = self.x.XGetWindowProperty(self.display,window,atom,0,256,0,0,C.byref(actual),C.byref(fmt),C.byref(count),C.byref(after),C.byref(data))
         try:
             if status or fmt.value != 32 or not data: return []
-            return list(C.cast(data,C.POINTER(C.c_ulong))[:min(256,count.value)])
+            # Xlib stores format32 words in native longs; some CARDINALs such
+            # as the sticky-workspace sentinel arrive sign-extended on LP64.
+            return [value & 0xffffffff for value in C.cast(data,C.POINTER(C.c_ulong))[:min(256,count.value)]]
         finally:
             if data: self.x.XFree(data)
 
