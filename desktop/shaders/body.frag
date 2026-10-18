@@ -8,15 +8,23 @@ layout(std140, binding = 0) uniform buf {
     vec4 secondRect;
     vec4 firstFlowRect;
     vec4 secondFlowRect;
-    vec4 firstGazeRect;
-    vec4 secondGazeRect;
-    vec4 eyeShift;
+    vec4 firstLeftEyeRect;
+    vec4 firstRightEyeRect;
+    vec4 secondLeftEyeRect;
+    vec4 secondRightEyeRect;
+    vec4 firstLeftEyeBounds;
+    vec4 firstRightEyeBounds;
+    vec4 secondLeftEyeBounds;
+    vec4 secondRightEyeBounds;
+    vec4 firstEyeShift;
+    vec4 secondEyeShift;
     vec4 skinWeights;
     vec2 flowRange;
     float phase;
     float clock;
     float intensity;
     float morphStrength;
+    float gazeStride;
 } ubuf;
 layout(binding = 1) uniform sampler2D bodyAtlas;
 layout(binding = 2) uniform sampler2D forwardAtlas;
@@ -32,6 +40,20 @@ float noise(vec2 p) {
 vec3 palette(float v, vec3 low, vec3 mid, vec3 high) {
     return mix(mix(low,mid,smoothstep(0.0,.55,v)),high,smoothstep(.55,1.0,v));
 }
+vec4 eyeLayer(vec4 source, vec2 uv, vec4 bounds, vec4 tile, vec2 shift) {
+    vec2 local=(uv-bounds.xy)/bounds.zw;
+    if (any(lessThan(local,vec2(0))) || any(greaterThan(local,vec2(1))) || dot(shift,shift)<.000000000001) return source;
+    vec4 irisRect=tile+vec4(ubuf.gazeStride,0,0,0);
+    vec4 maskRect=tile+vec4(ubuf.gazeStride*2.0,0,0,0);
+    float aperture=texture(gazeAtlas,atlasUv(local,maskRect)).r;
+    if (aperture<=.00001) return source;
+    vec3 plate=texture(gazeAtlas,atlasUv(local,tile)).rgb;
+    vec4 neutral=texture(gazeAtlas,atlasUv(local,irisRect));
+    vec4 moved=texture(gazeAtlas,atlasUv(local-shift/bounds.zw,irisRect));
+    vec3 delta=(moved.rgb-plate*moved.a)-(neutral.rgb-plate*neutral.a);
+    source.rgb=clamp(source.rgb+delta*aperture,vec3(0),vec3(source.a));
+    return source;
+}
 void main() {
     vec2 uv = qt_TexCoord0;
     float t = clamp(ubuf.phase, 0.0, 1.0);
@@ -42,12 +64,12 @@ void main() {
     vec2 bwd = (reverse.rg*255.0-128.0)/127.0 * ubuf.flowRange;
     float warp = ubuf.morphStrength * confidence;
     vec2 ua = uv-t*fwd*warp, ub = uv-(1.0-t)*bwd*warp;
-    vec2 eyeAField = texture(gazeAtlas, atlasUv(ua, ubuf.firstGazeRect)).rg;
-    vec2 eyeBField = texture(gazeAtlas, atlasUv(ub, ubuf.secondGazeRect)).rg;
-    vec2 eyeAOffset = eyeAField.x*ubuf.eyeShift.xy + eyeAField.y*ubuf.eyeShift.zw;
-    vec2 eyeBOffset = eyeBField.x*ubuf.eyeShift.xy + eyeBField.y*ubuf.eyeShift.zw;
-    vec4 first = texture(bodyAtlas, atlasUv(ua-eyeAOffset, ubuf.firstRect));
-    vec4 second = texture(bodyAtlas, atlasUv(ub-eyeBOffset, ubuf.secondRect));
+    vec4 first = texture(bodyAtlas, atlasUv(ua, ubuf.firstRect));
+    vec4 second = texture(bodyAtlas, atlasUv(ub, ubuf.secondRect));
+    first=eyeLayer(first,ua,ubuf.firstLeftEyeBounds,ubuf.firstLeftEyeRect,ubuf.firstEyeShift.xy);
+    first=eyeLayer(first,ua,ubuf.firstRightEyeBounds,ubuf.firstRightEyeRect,ubuf.firstEyeShift.zw);
+    second=eyeLayer(second,ub,ubuf.secondLeftEyeBounds,ubuf.secondLeftEyeRect,ubuf.secondEyeShift.xy);
+    second=eyeLayer(second,ub,ubuf.secondRightEyeBounds,ubuf.secondRightEyeRect,ubuf.secondEyeShift.zw);
     vec4 source;
     // At rest the displacement is exactly zero; the authored eye bytes remain.
     if (t <= 0.00001) source = first;

@@ -196,6 +196,7 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         self.errors = []
         self.upload_ms = 0.0
         self.current_clip = None
+        self.eye_texture_bytes = 0
         self.frames_rendered = 0
         self.scene_graph_initialized = False
         self._properties = {}
@@ -293,19 +294,20 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
             if self.artwork.cached_clip!=clip:self.artwork.clear_hit_cache()
             for property_name, suffix in (("bodySourceUrl","body"),("forwardSourceUrl","forward"),("backwardSourceUrl","backward")):
                 self._set(property_name, QtCore.QUrl.fromLocalFile(str(self.asset_root / f"{clip}-{suffix}.png")).toString())
-            if gaze_ready:
-                self._set("gazeSourceUrl",QtCore.QUrl.fromLocalFile(str(gaze_atlas.path.parent / f"{clip}.png")).toString())
-            else:
-                self._set("gazeSourceUrl",QtCore.QUrl.fromLocalFile(str(self.asset_root / "glow.png")).toString())
             self.current_clip = clip
-        first_gaze=gaze_atlas.rect(clip,index) if gaze_ready else None
-        second_gaze=gaze_atlas.rect(clip,following) if gaze_ready else None
-        if first_gaze is None or second_gaze is None:
-            first_gaze=second_gaze=(0.,0.,1.,1.)
-            gaze_shift=(0.,0.,0.,0.)
-        self._set("firstGazeRect",QtGui.QVector4D(*first_gaze))
-        self._set("secondGazeRect",QtGui.QVector4D(*second_gaze))
-        self._set("eyeShift",QtGui.QVector4D(gaze_shift[0]/384,gaze_shift[1]/416,gaze_shift[2]/384,gaze_shift[3]/416))
+        source=gaze_atlas.path.parent/f"{clip}.png" if gaze_ready else self.asset_root/"glow.png"
+        self._set("gazeSourceUrl",QtCore.QUrl.fromLocalFile(str(source)).toString())
+        registered=gaze_atlas.clips[clip] if gaze_ready else None
+        self.eye_texture_bytes=math.prod(registered['texture_size'])*4 if registered else 0
+        self._set("gazeStride",registered['stride'] if registered else 0.)
+        for prefix,frame_index in (("first",index),("second",following)):
+            for eye,label in enumerate(("Left","Right")):
+                rect=registered['rects'][frame_index][eye] if registered else (0.,0.,1.,1.)
+                bounds=registered['bounds'][frame_index][eye] if registered else (-2.,-2.,.1,.1)
+                self._set(prefix+label+"EyeRect",QtGui.QVector4D(*rect))
+                self._set(prefix+label+"EyeBounds",QtGui.QVector4D(*bounds))
+            shifts=gaze_atlas.displacements(clip,frame_index,gaze_shift) if registered else (0.,0.,0.,0.)
+            self._set(prefix+"EyeShift",QtGui.QVector4D(shifts[0]/384,shifts[1]/416,shifts[2]/384,shifts[3]/416))
         for key, value in (("firstRect",entry["body_rects"][index]),("secondRect",entry["body_rects"][following]),
                            ("firstFlowRect",entry["flow_rects"][index]),("secondFlowRect",entry["flow_rects"][following]),
                            ("bodyRect",body_rect),("pigment",skin_weights)):
@@ -343,6 +345,7 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
                 "errors":list(self.errors),"runtime_texture_readbacks":0,"runtime_optical_flow":False,
                 "scene_graph_initialized":self.scene_graph_initialized,"frames_rendered":self.frames_rendered,
                 "maximum_clip_texture_bytes":max((c["texture_bytes"] for c in self.manifest.get("clips",{}).values()),default=0),
+                "current_eye_texture_bytes":self.eye_texture_bytes,
                 "metadata_playback":bool(self.artwork and self.artwork._library is not None),
                 "playback_decoded_bytes":self.artwork._library.decoded_bytes if self.artwork and self.artwork._library else 0,
                 "hit_cache_bytes":self.artwork.hit_cache_bytes if self.artwork else 0,

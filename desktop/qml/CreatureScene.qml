@@ -24,9 +24,17 @@ Item {
     property vector4d secondRect: Qt.vector4d(0,0,1,1)
     property vector4d firstFlowRect: Qt.vector4d(0,0,1,1)
     property vector4d secondFlowRect: Qt.vector4d(0,0,1,1)
-    property vector4d firstGazeRect: Qt.vector4d(0,0,1,1)
-    property vector4d secondGazeRect: Qt.vector4d(0,0,1,1)
-    property vector4d eyeShift: Qt.vector4d(0,0,0,0)
+    property vector4d firstLeftEyeRect: Qt.vector4d(0,0,1,1)
+    property vector4d firstRightEyeRect: Qt.vector4d(0,0,1,1)
+    property vector4d secondLeftEyeRect: Qt.vector4d(0,0,1,1)
+    property vector4d secondRightEyeRect: Qt.vector4d(0,0,1,1)
+    property vector4d firstLeftEyeBounds: Qt.vector4d(-2,-2,.1,.1)
+    property vector4d firstRightEyeBounds: Qt.vector4d(-2,-2,.1,.1)
+    property vector4d secondLeftEyeBounds: Qt.vector4d(-2,-2,.1,.1)
+    property vector4d secondRightEyeBounds: Qt.vector4d(-2,-2,.1,.1)
+    property vector4d firstEyeShift: Qt.vector4d(0,0,0,0)
+    property vector4d secondEyeShift: Qt.vector4d(0,0,0,0)
+    property real gazeStride: 0
     property vector4d bodyRect: Qt.vector4d(120,20,192,208)
     property vector4d pigment: Qt.vector4d(.64,.20,.16,0)
     property vector2d flowRange: Qt.vector2d(64/384,64/416)
@@ -199,9 +207,17 @@ Item {
                 property vector4d secondRect: scene.secondRect
                 property vector4d firstFlowRect: scene.firstFlowRect
                 property vector4d secondFlowRect: scene.secondFlowRect
-                property vector4d firstGazeRect: scene.firstGazeRect
-                property vector4d secondGazeRect: scene.secondGazeRect
-                property vector4d eyeShift: scene.eyeShift
+                property vector4d firstLeftEyeRect: scene.firstLeftEyeRect
+                property vector4d firstRightEyeRect: scene.firstRightEyeRect
+                property vector4d secondLeftEyeRect: scene.secondLeftEyeRect
+                property vector4d secondRightEyeRect: scene.secondRightEyeRect
+                property vector4d firstLeftEyeBounds: scene.firstLeftEyeBounds
+                property vector4d firstRightEyeBounds: scene.firstRightEyeBounds
+                property vector4d secondLeftEyeBounds: scene.secondLeftEyeBounds
+                property vector4d secondRightEyeBounds: scene.secondRightEyeBounds
+                property vector4d firstEyeShift: scene.firstEyeShift
+                property vector4d secondEyeShift: scene.secondEyeShift
+                property real gazeStride: scene.gazeStride
                 property vector4d skinWeights: scene.pigment
                 property vector2d flowRange: scene.flowRange
                 property real phase: scene.phase

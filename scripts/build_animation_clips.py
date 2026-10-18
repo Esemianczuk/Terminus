@@ -50,7 +50,7 @@ class FrameAuthor:
         if any(image.isNull() for image in self.art.values()):
             raise ValueError("All approved source PNG poses are required")
 
-    def render(self, name, index, count):
+    def render(self, name, index, count, *, blink_layer=True):
         phase = index / count if SPECS[name][2] else 0.
         progress = index / max(1, count - 1)
         source, lid = "refined", 0.
@@ -155,7 +155,7 @@ class FrameAuthor:
                         painter.drawPixmap(patch, texture, patch); painter.restore()
 
         layer(self.art[source])
-        if lid > 0 and source == "refined":
+        if blink_layer and lid > 0 and source == "refined":
             # The matching sleep asset changes the eyelids alone. This is an
             # authored blink frame, not a runtime pose crossfade.
             layer(self.art["sleep"], lid)

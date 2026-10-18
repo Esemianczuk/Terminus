@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:sys.path.insert(0,str(REPO_ROOT))
 from PySide6 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 from terminus.supervision import notify,set_paused
 from desktop.graph_motion import GraphMotion
-from desktop.gaze import GazeAtlas, GazeController, warp_eye_pixels
+from desktop.gaze import GazeAtlas, GazeController, compose_eye_layers
 
 try:
     from desktop.skin import SkinAtlas, SkinEngine, MODES as SKIN_MODES
@@ -813,8 +813,7 @@ class Overlay(QtWidgets.QWidget):
             self.start_awareness()
         else:
             self.awareness_timer.stop()
-            self.gaze.pointer_at = -math.inf
-            self.gaze.pointer_xy = None
+            self.gaze.forget_pointer()
             if self.awareness_provider is not None:
                 self.awareness_provider.close(timeout=1.)
                 self.awareness_provider = None
@@ -1104,7 +1103,9 @@ class Overlay(QtWidgets.QWidget):
             # silhouette, eye detail and the desktop's input shape.
             image = self.skin.shade(self.clip_sample) if self.reference_renderer else self.clip_sample.image
             if self.gaze_atlas is not None:
-                image = warp_eye_pixels(image,self.gaze_atlas.field(self.clip_sample.clip,self.clip_sample.index),self.gaze_shift)
+                sample=self.clip_sample
+                image = compose_eye_layers(image,self.gaze_atlas.frame(sample.clip,sample.index),
+                                           self.gaze_atlas.displacements(sample.clip,sample.index,self.gaze_shift))
             painter.drawImage(self.creature_rect, image)
         else:
             art = self.artwork()
@@ -1136,26 +1137,36 @@ class Overlay(QtWidgets.QWidget):
 
     def update_gaze(self, now, points):
         """Map read-only desktop and graph attention into sprite-space irises."""
-        screen = self.home_screen.geometry() if self.home_screen else QtCore.QRect(0,0,1920,1080)
+        screen = self.home_screen.virtualGeometry() if self.home_screen else QtCore.QRect(0,0,1920,1080)
         rect = self.creature_rect
         body = (self.x()+rect.x()*self.scale,self.y()+rect.y()*self.scale,
                 rect.width()*self.scale,rect.height()*self.scale)
-        aware=(self.awareness_enabled and self.awareness.get("available")
+        aware=(self.awareness_enabled and self.fresh(now) and self.awareness.get("available")
+               and self.awareness.get("enabled")
                and 0 <= now-self.awareness.get("observed_at",0) <= 3.)
         pointer = self.awareness.get("pointer",{}) if aware else {}
-        pointer_values = (pointer["x"],pointer["y"],pointer["motion"]) if pointer.get("available") else None
+        pointer_values = None
+        if pointer.get("available"):
+            # Qt's read-only cursor query has no event hook, capture or input
+            # grab. Querying here avoids a 500ms aggregate-awareness snapshot
+            # dropping short pointer movements or using another display's map.
+            cursor = QtGui.QCursor.pos()
+            pointer_values = ((cursor.x()-screen.x())/max(1,screen.width()),
+                              (cursor.y()-screen.y())/max(1,screen.height()),0.)
         target_id=(self.state or {}).get("attention") if self.fresh(now) else None
         point=points.get(target_id) if isinstance(target_id,str) else None
         graph_target=(self.x()+point.x()*self.scale,self.y()+point.y()*self.scale) if point is not None else None
         inspection=self.inspection_target(now)
         window_target=(inspection.x(),inspection.y()) if inspection is not None else None
         sample=self.clip_sample
+        centres = self.gaze_atlas.centres(sample.clip,sample.index) if self.gaze_atlas is not None and sample is not None else None
         self.gaze_shift=self.gaze.update(now,body=body,screen=(screen.x(),screen.y(),screen.width(),screen.height()),
                                          mirror=bool(sample and sample.mirror),pointer=pointer_values,
                                          graph_target=graph_target,inspection_target=window_target,
                                          typing=self.typing_blend>.12,
                                          sleeping=(self.state or {}).get("behavior") in {"sleep","dream"},
-                                         reduced_motion=self.reduced_motion)
+                                         reduced_motion=self.reduced_motion,eye_centres=centres,
+                                         bank=self.flight_bank,pivot_offset=30*self.scale)
 
     def enable_gpu(self):
         if QtWidgets.QApplication.platformName() in {"offscreen","minimal"}:
@@ -1408,6 +1419,7 @@ class Overlay(QtWidgets.QWidget):
         if self.gpu_scene is not None and self.gpu_scene.available:
             if self.reduced_motion:return 250
             if not self.fresh(now):return 500
+            if self.gaze.settling:return 33
             if self.graph_motion.settling:return 33
             if self.hovering or self.press_global is not None or now-self.touch_started<1.6:return 50
             if self.gesture(now) or self.roam_goal is not None and self.can_roam(now):return 66
@@ -1429,6 +1441,8 @@ class Overlay(QtWidgets.QWidget):
                 # speed just because the next source frame is near its boundary.
                 floor = 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
                 interval = max(interval, floor)
+        if not self.reduced_motion and self.fresh(now) and self.gaze.settling:
+            interval = min(interval,50 if sys.platform == "darwin" else 33)
         return interval
 
     def presentation_interval(self, now):
@@ -2006,9 +2020,11 @@ class Overlay(QtWidgets.QWidget):
                                    "fallback": bool(getattr(self.clip_sample, "fallback", False)),
                                    "load_error": self.clip_error,
                                    "clip_errors": len(getattr(self.clip_library, "errors", ()))},
-                "gaze": {"mode":self.gaze.mode,"registered_clips":len(self.gaze_atlas.clips) if self.gaze_atlas else 0,
+                "gaze": {"model":"rigid-iris-v2","mode":self.gaze.mode,"settling":self.gaze.settling,
+                         "registered_clips":len(self.gaze_atlas.clips) if self.gaze_atlas else 0,
                          "errors":dict(self.gaze_atlas.errors) if self.gaze_atlas else {"atlas":"unavailable"},
-                         "motion_px":round(max(abs(value) for value in self.gaze_shift),2)},
+                         "motion_px":round(max(abs(value) for value in (self.gaze_atlas.displacements(self.clip_sample.clip,self.clip_sample.index,self.gaze_shift)
+                                             if self.gaze_atlas is not None and self.clip_sample is not None else (0.,)*4)),2)},
                 "graph_visibility": self.graph_visibility, "graph_gain": self.graph_gain,
                 "graphics": self.gpu_scene.diagnostics() if self.gpu_scene is not None else {"backend":"raster-sprite-fallback","error":getattr(self,"gpu_error",None)},
                 "skin": {**self.skin.diagnostics(),"backend":"gpu-fragment-shader","eye_mask_valid":True,"evaluation_ms":0.} if self.gpu_scene is not None and self.gpu_scene.available else self.skin.diagnostics(),

@@ -1,149 +1,175 @@
 #!/usr/bin/env python3
-"""Bake iris motion fields through the approved pose rig.
+"""Bake fixed apertures, rigid iris materials and pose-local orbit geometry.
 
-The source annotations describe only the visible eye openings and iris
-centres. The original pixels, including their painted highlights, are never
-segmented, repainted, or re-encoded. Run after build_animation_clips.py and
-before build_gpu_assets.py. This is an offline authoring step.
+Entirely offline. The native runtime translates each iris behind its fixed lid
+and applies a neutral-relative color delta to the untouched original GIF.
 """
 from __future__ import annotations
-
 import hashlib
 import json
+import math
 import os
-from pathlib import Path
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-import cv2
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import numpy as np
 from PIL import Image, ImageSequence
 from PySide6 import QtGui, QtWidgets
-
 from build_animation_clips import FrameAuthor, ROOT, SOURCES, SPECS, WIDTH, HEIGHT
+from gaze_source_layers import source_layers
 
-SOURCE = ROOT / "web/assets/clips"
-OUTPUT = ROOT / "web/assets/gaze"
-FIELD_WIDTH, FIELD_HEIGHT = 192, 208
-PAD, COLUMNS = 2, 4
-
-# Visible aperture outlines, once per approved source pose. Coordinates are
-# normalized in source art, and travel through the exact original pose rig.
-# The centres are the painted iris centres, not invented eyeball geometry.
-OPENINGS = {
-    "refined": (
-        ((.458, .434), ((.378,.417),(.410,.408),(.465,.402),(.515,.404),(.529,.411),(.523,.422),(.501,.440),(.464,.452),(.418,.455),(.392,.444))),
-        ((.688, .373), ((.640,.370),(.661,.359),(.703,.350),(.743,.349),(.750,.356),(.741,.376),(.718,.394),(.677,.401),(.651,.394))),
-    ),
-    "flight": (
-        ((.590, .437), ((.514,.415),(.549,.409),(.608,.402),(.679,.404),(.711,.415),(.709,.428),(.682,.448),(.638,.458),(.574,.459),(.538,.450))),
-        ((.839, .372), ((.804,.365),(.826,.351),(.864,.342),(.895,.338),(.897,.352),(.886,.378),(.858,.398),(.827,.404),(.810,.393))),
-    ),
-    "typing": (
-        ((.465, .452), ((.380,.436),(.414,.425),(.468,.422),(.518,.422),(.535,.433),(.528,.447),(.504,.460),(.466,.470),(.420,.471),(.392,.459))),
-        ((.692, .394), ((.644,.389),(.666,.377),(.706,.369),(.747,.368),(.756,.377),(.748,.396),(.724,.415),(.683,.421),(.657,.412))),
-    ),
-    "stretch": (
-        ((.502, .520), ((.424,.510),(.451,.500),(.503,.489),(.559,.488),(.582,.498),(.581,.511),(.558,.527),(.518,.540),(.468,.541),(.438,.530))),
-        ((.677, .465), ((.644,.462),(.659,.445),(.699,.428),(.735,.421),(.744,.429),(.741,.448),(.723,.471),(.693,.489),(.661,.486))),
-    ),
-}
+SOURCE=ROOT/'web/assets/clips'
+OUTPUT=ROOT/'web/assets/gaze'
+TILE_WIDTH,TILE_HEIGHT=96,64
+PAD,COLUMNS=2,4
 
 
-def source_field(size, opening):
-    width, height = size
-    (cx, cy), polygon = opening
-    aperture = np.zeros((height, width), np.uint8)
-    points = np.rint(np.asarray(polygon) * [width, height]).astype(np.int32)
-    cv2.fillPoly(aperture, [points], 255)
-    distance = cv2.distanceTransform(aperture, cv2.DIST_L2, 3)
-    yy, xx = np.mgrid[:height, :width].astype(np.float32)
-    radius = np.sqrt(((xx / width - cx) / .079) ** 2 + ((yy / height - cy) / .042) ** 2)
-    radial = np.clip((1.13 - radius) / .72, 0, 1)
-    radial = radial * radial * (3 - 2 * radial)
-    edge = np.clip((distance - 1.5) / 15, 0, 1)
-    edge = edge * edge * (3 - 2 * edge)
-    return np.rint(radial * edge * 255).astype(np.uint8)
+def pixmap(values):
+    values=np.ascontiguousarray(values,dtype=np.uint8)
+    h,w=values.shape[:2]
+    if values.shape[-1]==3:values=np.dstack((values,np.full((h,w),255,np.uint8)))
+    image=QtGui.QImage(values.data,w,h,w*4,QtGui.QImage.Format_RGBA8888).copy()
+    return QtGui.QPixmap.fromImage(image)
 
 
-def packed(frames):
-    rows = (len(frames) + COLUMNS - 1) // COLUMNS
-    tile_w, tile_h = FIELD_WIDTH + PAD * 2, FIELD_HEIGHT + PAD * 2
-    atlas = Image.new("RGBA", (tile_w * COLUMNS, tile_h * rows), (0,0,0,255))
-    rects = []
-    for index, channels in enumerate(frames):
-        x, y = index % COLUMNS * tile_w + PAD, index // COLUMNS * tile_h + PAD
-        rgba = np.empty((FIELD_HEIGHT, FIELD_WIDTH, 4), np.uint8)
-        rgba[:,:,0:2] = channels
-        rgba[:,:,2] = 0
-        rgba[:,:,3] = 255
-        padded = np.pad(rgba, ((PAD,PAD),(PAD,PAD),(0,0)), mode="edge")
-        atlas.paste(Image.fromarray(padded), (x-PAD,y-PAD))
-        rects.append([x/atlas.width,y/atlas.height,FIELD_WIDTH/atlas.width,FIELD_HEIGHT/atlas.height])
-    return atlas, rects
+def material_sources(eye,kind,layers):
+    result={}
+    for name,path in SOURCES.items():
+        with Image.open(path) as image:w,h=image.size
+        layer=layers[name][eye] if layers[name] else None
+        if kind=='mask':
+            values=np.zeros((h,w,4),np.uint8);values[:,:,3]=255
+            if layer is not None:values[:,:,:3]=layer['aperture'][:,:,None]
+        elif kind=='marker':
+            values=np.zeros((h,w,4),np.uint8)
+            if layer is not None:
+                cx,cy=np.asarray(layer['centre'])*[w,h]
+                rx,ry=np.asarray(layer['radii'])*[w,h]
+                theta=math.radians(layer.get('angle',0.))
+                # The fitted ellipse's eigenvector angle is not head facing.
+                # Orbit left/right in the painted facial plane, then let the
+                # pose rig supply the real bank, squash and local deformation.
+                horizontal=math.hypot(rx*math.cos(theta),ry*math.sin(theta))
+                vertical=math.hypot(rx*math.sin(theta),ry*math.cos(theta))
+                xstep=np.array([horizontal*.24,0.])
+                ystep=np.array([0.,vertical*.09])
+                points=[np.array([cx,cy]),np.array([cx,cy])+xstep,np.array([cx,cy])+ystep]
+                yy,xx=np.mgrid[:h,:w]
+                for channel,point in enumerate(points):
+                    values[:,:,channel]=np.rint(np.exp(-((xx-point[0])**2+(yy-point[1])**2)/(2*3.5**2))*255).astype(np.uint8)
+                values[:,:,3]=255
+        elif layer is None:values=np.zeros((h,w,4),np.uint8)
+        else:values=layer[kind]
+        result[name]=pixmap(values)
+    return result
+
+
+def register_marker(image):
+    array=np.asarray(image).astype(np.float64);points=[]
+    for channel in range(3):
+        values=array[:,:,channel];total=values.sum()
+        if total<2:return None
+        yy,xx=np.mgrid[:values.shape[0],:values.shape[1]]
+        points.append(np.array([(xx*values).sum()/total,(yy*values).sum()/total]))
+    return points[0],np.r_[points[1]-points[0],points[2]-points[0]]
+
+
+def pack(frames):
+    cell_w,cell_h=(TILE_WIDTH+PAD*2)*3,TILE_HEIGHT+PAD*2
+    rows=math.ceil(len(frames)*2/COLUMNS)
+    atlas=Image.new('RGBA',(COLUMNS*cell_w,rows*cell_h));textures=[]
+    for frame_index,eyes in enumerate(frames):
+        registered=[]
+        for eye_index,materials in enumerate(eyes):
+            index=frame_index*2+eye_index
+            x,y=index%COLUMNS*cell_w+PAD,index//COLUMNS*cell_h+PAD
+            registered.append([x/atlas.width,y/atlas.height,TILE_WIDTH/atlas.width,TILE_HEIGHT/atlas.height])
+            for kind,image in enumerate(materials):
+                padded=np.pad(np.asarray(image),((PAD,PAD),(PAD,PAD),(0,0)),mode='edge')
+                atlas.paste(Image.fromarray(padded),(x+kind*(TILE_WIDTH+PAD*2)-PAD,y-PAD))
+        textures.append(registered)
+    return atlas,textures,(TILE_WIDTH+PAD*2)/atlas.width
+
+
+def match_visible_material(plate,iris,aperture,original):
+    """Exact alpha matting against decoded GIF colors prevents an old-iris halo.
+
+    Source segmentation supplies the geometry and hidden cap. The foreground
+    is then solved against its backplate at every visible boundary pixel, so
+    partial alpha does not leave the original limbus behind during movement.
+    """
+    background=np.asarray(plate).copy().astype(np.float32)/255.
+    foreground=np.asarray(iris).copy().astype(np.float32)/255.
+    observed=np.asarray(original).astype(np.float32)[:,:,:3]/255.
+    inside=np.asarray(aperture)[:,:,0]>.99*255
+    alpha=foreground[:,:,3]
+    outside=inside&(alpha<.01)
+    background[outside,:3]=observed[outside]
+    b=background[:,:,:3]
+    required=np.where(observed<b,1-observed/np.maximum(b,.00001),
+                      (observed-b)/np.maximum(1-b,.00001)).max(axis=2)
+    corrected=np.ceil(np.maximum(alpha,required)*255)/255.
+    corrected=np.clip(corrected,0,1)
+    premultiplied=observed-b*(1-corrected[:,:,None])
+    color=np.clip(premultiplied/np.maximum(corrected[:,:,None],1/255),0,1)
+    foreground[inside,:3]=color[inside];foreground[inside,3]=corrected[inside]
+    return Image.fromarray(np.rint(background*255).clip(0,255).astype(np.uint8)),Image.fromarray(np.rint(foreground*255).clip(0,255).astype(np.uint8))
 
 
 def build():
-    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    if set(SOURCES)-set(OPENINGS)-{"sleep","yawn"}:
-        raise ValueError("Every open-eye source pose needs two aperture annotations")
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    author = FrameAuthor()
-    source_images = {}
-    for name, path in SOURCES.items():
-        size = Image.open(path).size
-        source_images[name] = []
+    app=QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    OUTPUT.mkdir(parents=True,exist_ok=True)
+    layers={name:source_layers(name) for name in SOURCES}
+    author=FrameAuthor()
+    materials={(eye,kind):material_sources(eye,kind,layers) for eye in range(2) for kind in ('plate','iris','mask','marker')}
+    result={'version':2,'canvas':[WIDTH,HEIGHT],'tile_canvas':[TILE_WIDTH,TILE_HEIGHT],
+            'method':'fixed aperture, rigid iris and neutral-relative sclera composite through original pose rig',
+            'sources':{name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in SOURCES.items()},'clips':{}}
+    for name,(count,delay,_) in SPECS.items():
+        authored={}
         for eye in range(2):
-            values = source_field(size, OPENINGS[name][eye]) if name in OPENINGS else np.zeros((size[1],size[0]),np.uint8)
-            # Full opaque black source permits the existing sleep overlay to
-            # attenuate the field during blink frames via painter opacity.
-            rgba = np.empty((size[1],size[0],4),np.uint8)
-            rgba[:,:,:3] = values[:,:,None]
-            rgba[:,:,3] = 255
-            image = QtGui.QImage(rgba.data,size[0],size[1],size[0]*4,QtGui.QImage.Format_RGBA8888).copy()
-            source_images[name].append(QtGui.QPixmap.fromImage(image))
-    manifest = {"version":1,"canvas":[WIDTH,HEIGHT],"field_canvas":[FIELD_WIDTH,FIELD_HEIGHT],
-                "method":"authored aperture fields propagated through the original pose rig",
-                "source_openings":OPENINGS,"sources":{name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in SOURCES.items()},
-                "clips":{}}
-    for name, (count, delay, _) in SPECS.items():
-        channels = []
-        for eye in range(2):
-            author.art = {source:source_images[source][eye] for source in SOURCES}
-            channels.append([np.asarray(author.render(name,index,count))[:,:,0] for index in range(count)])
-        gif_path = SOURCE / f"{name}.gif"
-        with Image.open(gif_path) as gif:
-            durations = [max(20,min(1000,frame.info.get("duration",delay))) for frame in ImageSequence.Iterator(gif)]
-        frames, centres, openness = [], [], []
-        first = 0
-        for duration in durations:
-            end = first + duration // delay
-            if end <= first or end > count:
-                raise ValueError(f"{name}: GIF clock differs from pose rig")
-            masks = [np.max(channel[first:end],axis=0) for channel in channels]
-            # The source lid can hide the iris before it reaches full opacity.
-            # Once visually closed, do not deform even a faint residual field.
-            masks = [mask if mask.max() >= 90 else np.zeros_like(mask) for mask in masks]
-            pair = np.stack([cv2.resize(mask,(FIELD_WIDTH,FIELD_HEIGHT),interpolation=cv2.INTER_AREA) for mask in masks],axis=-1)
-            frames.append(pair)
-            frame_centres, frame_open = [], []
-            for mask in masks:
-                maximum = int(mask.max())
-                yy, xx = np.nonzero(mask >= max(32,maximum*.85))
-                frame_centres.append([round(float(xx.mean()/WIDTH),6),round(float(yy.mean()/HEIGHT),6)] if len(xx) and maximum >= 32 else [0.,0.])
-                frame_open.append(round(maximum/255,4))
-            centres.append(frame_centres);openness.append(frame_open)
-            first = end
-        if first != count:raise ValueError(f"{name}: incomplete pose registration")
-        atlas, rects = packed(frames)
-        destination = OUTPUT / f"{name}.png"
-        atlas.save(destination,optimize=True)
-        manifest["clips"][name] = {"sha256":hashlib.sha256(gif_path.read_bytes()).hexdigest(),
-                                    "field_sha256":hashlib.sha256(destination.read_bytes()).hexdigest(),
-                                    "frames":len(frames),"rects":rects,"centres":centres,"openness":openness}
-    (OUTPUT/"manifest.json").write_text(json.dumps(manifest,separators=(",",":"))+"\n")
-    print(json.dumps({"clips":len(manifest["clips"]),"frames":sum(c["frames"] for c in manifest["clips"].values()),
-                      "compressed_bytes":sum(p.stat().st_size for p in OUTPUT.glob("*.png"))}))
+            for kind in ('plate','iris','mask','marker'):
+                author.art=materials[eye,kind]
+                authored[eye,kind]=[author.render(name,index,count,blink_layer=kind=='mask') for index in range(count)]
+        path=SOURCE/f'{name}.gif'
+        with Image.open(path) as gif:
+            decoded=[frame.convert('RGBA') for frame in ImageSequence.Iterator(gif)]
+            durations=[max(20,min(1000,frame.info.get('duration',delay))) for frame in ImageSequence.Iterator(gif)]
+        frames,bounds,centres,orbits,openness=[],[],[],[],[];first=0
+        for decoded_index,duration in enumerate(durations):
+            end=first+duration//delay
+            if end<=first or end>count:raise ValueError(f'{name}: GIF clock differs from pose rig')
+            frame_eyes,frame_bounds,frame_centres,frame_orbits,frame_open=[],[],[],[],[]
+            for eye in range(2):
+                mask=np.max([np.asarray(im)[:,:,0] for im in authored[eye,'mask'][first:end]],axis=0)
+                maximum=int(mask.max())
+                if maximum<90:mask[:]=0
+                marker=register_marker(authored[eye,'marker'][first])
+                if marker is None:center=np.array([WIDTH*.5,HEIGHT*.4]);orbit=np.zeros(4)
+                else:center,orbit=marker
+                x0,y0=round(center[0]-TILE_WIDTH*.5),round(center[1]-TILE_HEIGHT*.5)
+                box=(x0,y0,x0+TILE_WIDTH,y0+TILE_HEIGHT)
+                aperture=Image.fromarray(mask).convert('RGBA');aperture.putalpha(255)
+                plate=authored[eye,'plate'][first].crop(box);plate.putalpha(255)
+                iris=authored[eye,'iris'][first].crop(box)
+                aperture=aperture.crop(box)
+                if maximum>=250:
+                    plate,iris=match_visible_material(plate,iris,aperture,decoded[decoded_index].crop(box))
+                frame_eyes.append((plate,iris,aperture))
+                frame_bounds.append([x0/WIDTH,y0/HEIGHT,TILE_WIDTH/WIDTH,TILE_HEIGHT/HEIGHT])
+                frame_centres.append([round(float(center[0]/WIDTH),7),round(float(center[1]/HEIGHT),7)])
+                frame_orbits.append([round(float(value),7) for value in orbit])
+                frame_open.append(round(maximum/255,5) if maximum>=90 else 0.)
+            frames.append(frame_eyes);bounds.append(frame_bounds);centres.append(frame_centres);orbits.append(frame_orbits);openness.append(frame_open);first=end
+        if first!=count:raise ValueError(f'{name}: incomplete pose registration')
+        atlas,rects,stride=pack(frames)
+        destination=OUTPUT/f'{name}.png';atlas.save(destination,optimize=True)
+        result['clips'][name]={'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                               'field_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),
+                               'frames':len(frames),'rects':rects,'bounds':bounds,'centres':centres,'orbits':orbits,
+                               'openness':openness,'stride':stride,'texture_size':list(atlas.size)}
+    (OUTPUT/'manifest.json').write_text(json.dumps(result,separators=(',',':'))+'\n')
+    print(json.dumps({'clips':len(result['clips']),'frames':sum(c['frames'] for c in result['clips'].values()),
+                      'compressed_bytes':sum(p.stat().st_size for p in OUTPUT.glob('*.png')),
+                      'largest_texture_bytes':max(math.prod(c['texture_size'])*4 for c in result['clips'].values())}))
 
 
-if __name__ == "__main__":
-    build()
+if __name__=='__main__':build()

@@ -164,7 +164,7 @@ class GpuAssetTests(unittest.TestCase):
         properties={}
         # Exercise the real submission method without constructing a native Qt
         # widget or asking a headless test runner to initialize a graphics API.
-        scene=SimpleNamespace(available=True,manifest=self.manifest,current_clip='idle',
+        scene=SimpleNamespace(available=True,manifest=self.manifest,current_clip='idle',asset_root=ASSETS,
                               _set=lambda name,value:properties.__setitem__(name,value))
         nodes=[dict(id=str(i),x=1,y=2,activation=.1,focus=False,contact=False) for i in range(80)]
         edges=[dict(index=i,x0=1,y0=2,cx=3,cy=4,x1=5,y1=6,activation=.1,weight=.2,focus=False) for i in range(340)]
