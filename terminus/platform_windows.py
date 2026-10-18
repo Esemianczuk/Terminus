@@ -26,10 +26,14 @@ def ps_string(value):
 
 
 def powershell(script, *, check=True):
-    encoded = base64.b64encode(("$ErrorActionPreference='Stop';\n" + script).encode('utf-16le')).decode()
-    return subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                          capture_output=True, text=True, timeout=30, check=check,
-                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    wrapped = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';\ntry {\n"+script+"\n} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
+    encoded = base64.b64encode(wrapped.encode('utf-16le')).decode()
+    result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                            capture_output=True, text=True, timeout=30,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    if check and result.returncode:
+        raise RuntimeError('Windows task operation failed: '+result.stderr.strip()[:2000])
+    return result
 
 
 def marker(root):
@@ -86,9 +90,25 @@ def register(role, root=ROOT):
     user = powershell('[System.Security.Principal.WindowsIdentity]::GetCurrent().Name').stdout.strip()
     xml = definition(role, root, user)
     powershell(fr"""
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$sid = $identity.User.Value
+$security = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;$sid)"
+$scheduler = New-Object -ComObject Schedule.Service
+$scheduler.Connect()
+try {{ $folder = $scheduler.GetFolder('\Terminus') }}
+catch {{ $folder = $scheduler.GetFolder('\').CreateFolder('Terminus', $security) }}
+# SSH often runs with an elevated token. Explicit per-user task rights let
+# the non-elevated guardian and updater manage their own jobs afterwards.
+foreach ($entry in $folder.GetTasks(0)) {{
+    if ($entry.Definition.RegistrationInfo.Description -ne {ps_string(marker(root))}) {{
+        throw 'Terminus task folder contains an unrelated job; permissions were not changed.'
+    }}
+}}
+$folder.SetSecurityDescriptor($security, 0)
 $old = Get-ScheduledTask -TaskPath '\Terminus\' -TaskName {ps_string(role)} -ErrorAction SilentlyContinue
 if ($old -and $old.Description -ne {ps_string(marker(root))}) {{ throw 'Task belongs to another checkout.' }}
 Register-ScheduledTask -TaskPath '\Terminus\' -TaskName {ps_string(role)} -Xml {ps_string(xml)} -Force | Out-Null
+$folder.GetTask({ps_string(role)}).SetSecurityDescriptor($security, 0)
 """)
 
 
