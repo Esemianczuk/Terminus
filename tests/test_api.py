@@ -50,6 +50,30 @@ def test_pair_auth_cookie_origin_and_input_boundaries(tmp_path):
         assert client.post("/api/events", content="x" * 9000, headers=ORIGIN).status_code == 413
 
 
+def test_loopback_browser_pairs_automatically_but_remote_and_cross_origin_do_not(tmp_path):
+    app = create_app(tmp_path, tick_interval=0, loopback_browser_pairing=True)
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
+        assert client.get("/api/state").status_code == 401
+        assert client.post("/api/pair-local").status_code == 403
+        assert client.post("/api/pair-local", headers={"origin": "http://evil.invalid"}).status_code == 403
+        assert client.post("/api/pair-local", headers={**ORIGIN, "x-forwarded-for": "127.0.0.1"}).status_code == 403
+        response = client.post("/api/pair-local", headers=ORIGIN)
+        assert response.status_code == 200
+        assert "HttpOnly" in response.headers["set-cookie"]
+        assert "SameSite=strict" in response.headers["set-cookie"]
+        assert client.get("/api/state").status_code == 200
+        assert client.post("/api/events", json=payload(), headers={"origin": "http://evil.invalid"}).status_code == 403
+        assert client.post("/api/events", json=payload(), headers=ORIGIN).status_code == 200
+    with TestClient(app, base_url=BASE_URL, client=("192.0.2.10", 50000)) as remote:
+        assert remote.post("/api/pair-local", headers=ORIGIN).status_code == 403
+        assert remote.get("/api/state").status_code == 401
+    with TestClient(app, base_url="http://evil.invalid:8769", client=("127.0.0.1", 50000)) as rebound:
+        assert rebound.post("/api/pair-local", headers={"origin": "http://evil.invalid:8769"}).status_code == 403
+    manual_only = create_app(tmp_path, tick_interval=0)
+    with TestClient(manual_only, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
+        assert client.post("/api/pair-local", headers=ORIGIN).status_code == 403
+
+
 def test_two_websockets_receive_the_same_persisted_revision(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
     with TestClient(app, base_url=BASE_URL) as client:

@@ -87,9 +87,9 @@ This format leaves out content by construction. It is not a formal differential-
 
 ## Browser habitat
 
-Open `http://127.0.0.1:8769` to see his wider graph, introduce a context or inspect learning. Pair with the local `.local/token` file when asked. The browser and desktop on one machine share that machine's core.
+Open `http://127.0.0.1:8769` to see his wider graph, introduce a context or inspect learning. A browser on the same computer pairs automatically; there is no token to copy. The browser and desktop on one machine share that machine's core.
 
-The API defaults to loopback and requires authentication. Public collective learning does not expose the local API. Sharing one core with a remote browser is a separate, deliberate setup through a private HTTPS endpoint.
+The API defaults to loopback and still uses an authenticated session cookie. Automatic pairing requires a same-origin browser request through a loopback connection to a loopback address. Network-bound and remote browser access still need the private `.local/token` file. Public collective learning does not expose the local API. Sharing one core with a remote browser is a separate, deliberate setup through a private HTTPS endpoint.
 
 ## What he learns
 

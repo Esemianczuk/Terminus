@@ -1,4 +1,4 @@
-"""Run ``python -m terminus serve``; reveal pairing only with the token command."""
+"""Run the local core; reveal the private remote pairing token on request."""
 
 from __future__ import annotations
 
@@ -32,7 +32,8 @@ def main(argv=None):
     if not loopback_host(args.host) and not args.allow_network:
         parser.error("A non-loopback host needs --allow-network; every client must still pair")
     import uvicorn
-    uvicorn.run(create_app(args.data_dir, seed=args.seed if args.seed is not None else secrets.randbits(63)), host=args.host, port=args.port,
+    uvicorn.run(create_app(args.data_dir, seed=args.seed if args.seed is not None else secrets.randbits(63),
+                           loopback_browser_pairing=loopback_host(args.host)), host=args.host, port=args.port,
                 access_log=False, log_level="info", ws_max_size=8192)
 
 

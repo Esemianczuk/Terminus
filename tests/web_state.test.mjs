@@ -35,6 +35,7 @@ function browser(initialStorage={}) {
   const images=[];
   let sequence=0;
   let getStatus=200;
+  let localPairStatus=403;
   const serverState=snapshot();
   storage.set('terminus.snapshot.v1',JSON.stringify({state:serverState,receivedAt:Date.now()}));
   const document={hidden:true,body:new Element(),querySelector(selector){if(!elements.has(selector))elements.set(selector,new Element());return elements.get(selector);},createElement:()=>new Element(),createElementNS:()=>new Element(),addEventListener(){}};
@@ -50,6 +51,10 @@ function browser(initialStorage={}) {
       const body=options.body?JSON.parse(options.body):undefined;
       requests.push({url,method:options.method||'GET',body});
       if(url==='/api/state')return {ok:getStatus===200,status:getStatus,json:async()=>serverState};
+      if(url==='/api/pair-local') {
+        if(localPairStatus===200) getStatus=200;
+        return {ok:localPairStatus===200,status:localPairStatus};
+      }
       // A duplicate acknowledgement is still a successfully delivered event.
       return {ok:true,status:200,json:async()=>({accepted:false,revision:2})};
     },
@@ -60,7 +65,7 @@ function browser(initialStorage={}) {
     storage,requests,images,run,
     readOutbox:()=>JSON.parse(storage.get(OUTBOX)||'[]'),
     async offerContext(label){const input=document.querySelector('#context-input');input.value=label;const form=document.querySelector('#context-form');await form.listeners.get('submit')({preventDefault(){},currentTarget:form});},
-    async reconnect(status=200){getStatus=status;run('navigator.onLine=true');await run('bootstrap()');await new Promise(resolve=>setImmediate(resolve));},
+    async reconnect(status=200,localPair=403){getStatus=status;localPairStatus=localPair;run('navigator.onLine=true');await run('bootstrap()');await new Promise(resolve=>setImmediate(resolve));},
     element:selector=>document.querySelector(selector),
   };
 }
@@ -89,6 +94,16 @@ test('confirmed 401 blocks additions and upload until a fresh authenticated stat
   await client.reconnect(200);
   assert.equal(client.requests.filter(request=>request.url==='/api/events').length,1);
   assert.equal(client.readOutbox().length,0);
+});
+
+test('local browser opens the habitat automatically after an unauthenticated state',async()=>{
+  const client=browser();
+  await client.reconnect(401,200);
+  assert.equal(client.run('authenticated'),true);
+  assert.equal(client.element('#pairing').hidden,true);
+  assert.deepEqual(client.requests.map(request=>request.url).slice(0,3),
+                   ['/api/state','/api/pair-local','/api/state']);
+  assert.equal(client.requests.filter(request=>request.url==='/api/events').length,0);
 });
 
 test('replay preserves the event ID and strips internal metadata; stale clients cannot consume the v2 outbox',async()=>{

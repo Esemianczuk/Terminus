@@ -296,12 +296,19 @@ async function bootstrap() {
   clearTimeout(retryTimer);
   if (!navigator.onLine) { setConnection('offline', 'Offline · saved view'); scheduleReconnect(); return; }
   try {
-    const response = await fetch('/api/state', {cache:'no-store',signal:AbortSignal.timeout(8000)});
+    let response = await fetch('/api/state', {cache:'no-store',signal:AbortSignal.timeout(8000)});
     if (generation !== bootstrapGeneration || !navigator.onLine) return;
     if (response.status === 401) {
-      requirePairing();
-      $('#pairing-token').focus();
-      return;
+      const localPair = await fetch('/api/pair-local', {method:'POST',signal:AbortSignal.timeout(8000)});
+      if (generation !== bootstrapGeneration || !navigator.onLine) return;
+      if (localPair.ok) response = await fetch('/api/state', {cache:'no-store',signal:AbortSignal.timeout(8000)});
+      else if (localPair.status !== 403 && localPair.status !== 404) throw new Error(`Local pairing returned ${localPair.status}`);
+      if (generation !== bootstrapGeneration || !navigator.onLine) return;
+      if (response.status === 401) {
+        requirePairing();
+        $('#pairing-token').focus();
+        return;
+      }
     }
     if (!response.ok) throw new Error(`Server returned ${response.status}`);
     const incoming = await response.json();

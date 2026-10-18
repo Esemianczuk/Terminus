@@ -1,8 +1,9 @@
 """Authenticated HTTP/WebSocket habitat; all clients share one serialized core.
 
-Pair using POST /api/pair with a token read from the private runtime file. Browser
-clients receive a signed HttpOnly SameSite cookie; command-line clients can send
-Authorization: Bearer. Cookie mutations and WebSockets require the same origin.
+Loopback-bound browsers pair automatically through POST /api/pair-local. Other
+browsers use POST /api/pair with the private token. Both receive a signed
+HttpOnly SameSite cookie; command-line clients can send Authorization: Bearer.
+Cookie mutations and WebSockets require the same origin.
 The event history retains 512 entries and idempotency covers the last 4096 ids.
 """
 
@@ -282,7 +283,8 @@ class Service:
             notify("Core healthy" if healthy else "Core degraded; watchdog recovery pending", healthy=healthy)
 
 
-def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_interval=15.0, clock=time.time, web_dir=None):
+def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_interval=15.0,
+               clock=time.time, web_dir=None, loopback_browser_pairing=False):
     """Build an application without starting a second organism until lifespan."""
     if not math.isfinite(checkpoint_interval) or checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive and finite")
@@ -351,6 +353,24 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
             raise HTTPException(403, "A same-origin request is required")
         if not hmac.compare_digest(body.token.encode(), service.store.token.encode()):
             raise HTTPException(401, "Pairing token does not match")
+        response.set_cookie(COOKIE, service.sign_session(), max_age=SESSION_SECONDS,
+                            httponly=True, secure=request.url.scheme == "https", samesite="strict", path="/")
+        return {"paired": True, "organism_id": service.store.organism.data["organism_id"]}
+
+    @app.post("/api/pair-local")
+    async def pair_local(request: Request, response: Response):
+        # A same-origin page served directly from this machine can acquire its
+        # ordinary session cookie without making the person handle a secret.
+        # Both the TCP peer and Host must be loopback. A network-bound server,
+        # reverse proxy or cross-origin page must use explicit token pairing.
+        peer = request.client.host if request.client else ""
+        forwarded = any(request.headers.get(name) for name in
+                        ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"))
+        if not (loopback_browser_pairing and loopback_host(peer) and not forwarded
+                and loopback_host(request.url.hostname or "") and same_origin(request)):
+            raise HTTPException(403, "Local browser pairing is unavailable")
+        service = app.state.service
+        service.rate("pair-local:" + peer, 30)
         response.set_cookie(COOKIE, service.sign_session(), max_age=SESSION_SECONDS,
                             httponly=True, secure=request.url.scheme == "https", samesite="strict", path="/")
         return {"paired": True, "organism_id": service.store.organism.data["organism_id"]}
