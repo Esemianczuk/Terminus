@@ -1,6 +1,6 @@
 # Desktop awareness without taking input
 
-Terminus notices the rhythm of local activity. He does not receive text, images of other applications, window titles, clipboard contents, passwords, key identities or audio. The switch in his menu and `--no-awareness` disable this observation. Turning it off reaps its helper and stops current observations; it does not erase the creature's earlier learned history.
+Terminus notices the rhythm of local activity. His activity observer does not receive text, images of other applications, window titles, clipboard contents, passwords, key identities or audio. The separate optional background-color sensor is described below. The switch in his menu and `--no-awareness` disable this observation. Turning it off reaps its helper and stops current observations; it does not erase the creature's earlier learned history.
 
 The body never needs keyboard focus. His window is nonactivating, accepts no keyboard focus and has no keyboard shortcut registration. The observer cannot activate another application, select a text field, send input, change cursor position or acquire an input grab. Observation and the native window's focus policy are separate boundaries and are tested separately.
 
@@ -16,7 +16,7 @@ On X11, a private XCB connection reads the active window's rectangle and passive
 
 The X11 worker also queries cursor coordinates and a bounded set of normal mapped window rectangles on the current workspace. These rectangles are reduced to a coarse count, normalized bounds and clipped area estimate. It does not read application names or titles, identify controls, capture other applications or reconstruct their contents. The area estimate sums rectangles and clips at one; overlapping windows make it an approximation, not a measurement of visible pixels.
 
-On macOS, CoreGraphics supplies cursor position and on-screen window geometry. The first normal window is a coarse inspection target, not a claim that an accessibility text field was located. No event tap, accessibility API or application activation is used. Keyboard rhythm uses an aggregate idle-time query only when Input Monitoring was already granted. The app checks existing permission and never requests or changes it. If permission is missing, pointer and geometry observation still work and keyboard awareness is explicitly unavailable. Window titles and owner names are never accessed. Normalized coordinates currently use the main display; precise gaze across mixed-DPI, multiple-monitor configurations remains approximate.
+On macOS, CoreGraphics supplies cursor position and on-screen window geometry. The first normal window is a coarse inspection target, not a claim that an accessibility text field was located. No event tap, accessibility API or application activation is used. Keyboard rhythm uses an aggregate idle-time query only when Input Monitoring was already granted. Startup checks existing permission without prompting. The explicit **Allow typing awareness...** menu command can ask macOS for it; the app cannot grant permission itself. If permission is missing, pointer and geometry observation still work and keyboard awareness is explicitly unavailable. Window titles and owner names are never accessed. Normalized coordinates currently use the main display; precise gaze across mixed-DPI, multiple-monitor configurations remains approximate.
 
 The former AT-SPI caret helper has been retired. It no longer starts a process or opens an accessibility text interface. The creature looks toward a window region, not a character position. This removes an unnecessary IPC dependency from typing interaction.
 
@@ -39,6 +39,14 @@ microphone: {available, in_use}                  # no audio
 Window and pointer geometry stay in the native body. The only observations sent to the authenticated local core are rate-limited activity cues with fixed contexts: `typing`, `typing-pause`, `pointer`, `microphone` and `desktop`. They use the existing event kind, source, intensity and timestamp fields. A cue describes fresh real activity; failed connections do not queue observations for replay as current activity.
 
 The private learner can associate these activity categories with quiet intervals and occasionally respond between bouts. It cannot infer what was typed or spoken. The public collective learner still sees only the seven fixed event kinds, so these cues all reduce to the same `activity` category before a public contribution is constructed. Private geometry, precise pointer paths, contexts and timestamps never enter that learner.
+
+## Optional background colors
+
+**Living skin → Match colors behind me** starts a separate disposable worker, at most twice per second. X11 samples small patches from existing compositor window pixmaps behind the creature, excluding his own process. macOS captures only the panel-sized region below his window, then reduces it through CoreGraphics to a two-by-two color field. macOS Screen Recording permission is required and requested only through **Allow screen colors...**. Native Wayland is unsupported and returns unavailable.
+
+Capture pixels exist briefly inside that worker. Only twelve RGB numbers cross its pipe. Neither pixels nor colors are written to disk or delivered to the organism, private predictor or collective learner. There is no OCR, title lookup or text extraction. The palette and confidence ease into the shader over time. Missing permission, stale samples or a worker timeout fade back to the authored palette. Turning the switch off kills the owned worker and clears the palette immediately. Background colors and the activity observer have separate switches.
+
+Coarse window geometry also supplies smooth local currents to the ink shader. That geometry stays in the body and is discarded on exit. No fluid effect can activate a window or intercept an input event.
 
 ## Verification
 

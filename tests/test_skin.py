@@ -64,6 +64,29 @@ class SkinTests(unittest.TestCase):
         for a,b in zip(results,results[1:]):
             self.assertGreater(np.abs(a.astype(float)-b).sum(),10000)
 
+    def test_ascii_dissolves_only_unprotected_skin_across_every_pose(self):
+        engine=SkinEngine(self.atlas,'ascii')
+        engine.update(0.,reduced_motion=True)
+        for name,clip in self.library.clips.items():
+            for index,original in enumerate(clip.frames):
+                with self.subTest(clip=name,frame=index):
+                    before=rgba(original)
+                    result=rgba(engine.shade(self.sample(name,index)))
+                    guard,_=eye_field(self.atlas.frames[name][index],384,416)
+                    np.testing.assert_array_equal(result[guard],before[guard])
+                    np.testing.assert_array_equal(result[before[:,:,3]==0],before[before[:,:,3]==0])
+                    self.assertGreater(np.count_nonzero(result[:,:,3]!=before[:,:,3]),100)
+
+    def test_raster_camouflage_responds_to_coarse_background_palette(self):
+        engine=SkinEngine(self.atlas,'camouflage');engine.update(0.)
+        engine.set_screen_field({'colors':[[.7,.1,.1]]*4,'confidence':1})
+        red=rgba(engine.shade(self.sample()))
+        engine.set_screen_field({'colors':[[.1,.1,.7]]*4,'confidence':1})
+        blue=rgba(engine.shade(self.sample()))
+        guard,_=eye_field(self.atlas.frames['idle'][0],384,416)
+        np.testing.assert_array_equal(red[guard],blue[guard])
+        self.assertGreater(int(red[:,:,:3].astype(float)[:,:,0].sum()),int(blue[:,:,:3].astype(float)[:,:,0].sum())+10000)
+
     def test_stale_state_and_resume_do_not_jump_or_invent_animation_time(self):
         engine = SkinEngine(self.atlas,'cascade')
         sample = self.sample()
@@ -78,6 +101,21 @@ class SkinTests(unittest.TestCase):
         self.assertEqual(engine.phase,phase)
         engine.update(301.1,fresh=True)
         self.assertGreater(engine.phase,phase)
+
+    def test_reduced_motion_discards_ink_even_after_core_disconnect(self):
+        engine=SkinEngine(self.atlas)
+        engine.update(0.)
+        self.assertTrue(engine.release_ink())
+        for i in range(1,11):engine.update(i*.1)
+        self.assertGreater(engine.effect_uniforms()['ink'],.5)
+        clock=engine.effects.clock
+        engine.update(20.,fresh=False,reduced_motion=True)
+        self.assertEqual(engine.effect_uniforms()['ink'],0.)
+        self.assertTrue(engine.effect_uniforms()['reduced_motion'])
+        self.assertEqual(engine.effects.clock,clock)
+        engine.update(21.,fresh=True)
+        engine.update(21.1,fresh=True)
+        self.assertEqual(engine.effect_uniforms()['ink'],0.)
 
     def test_reduced_motion_is_static_but_still_allows_style_selection(self):
         engine = SkinEngine(self.atlas,'camouflage')

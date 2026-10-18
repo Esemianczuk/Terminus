@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 
 from PySide6 import QtCore, QtGui, QtQuick, QtQuickWidgets
+from desktop.effects import screen_uniforms, unit
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_NODES=72
@@ -197,6 +198,7 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         self.upload_ms = 0.0
         self.current_clip = None
         self.eye_texture_bytes = 0
+        self.effect_state = {'ascii': 0., 'ink': 0., 'screen_confidence': 0.}
         self.frames_rendered = 0
         self.scene_graph_initialized = False
         self._properties = {}
@@ -280,7 +282,8 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
                   clock=0, skin_weights=(.64,.20,.16,0), skin_intensity=.75, opacity=1,
                   graph_gain=2.8, nodes=(), edges=(), tendrils=(), glyphs=(), status=None,
                   morph_strength=1, body_visible=True, desktop_rects=(), cursor=None,
-                  mic_active=False,skin_clock=None,gaze_atlas=None,gaze_shift=(0,0,0,0)):
+                  mic_active=False,skin_clock=None,gaze_atlas=None,gaze_shift=(0,0,0,0),
+                  screen_field=None,effects=None):
         if not self.available:
             return False
         started = time.perf_counter()
@@ -337,6 +340,21 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
         else:
             self._set("cursorState",{})
         self._set("micActive",bool(mic_active))
+        field = screen_uniforms(screen_field)
+        effects = effects if isinstance(effects,dict) else {}
+        for key,color in zip(('backgroundTL','backgroundTR','backgroundBL','backgroundBR'),field['colors']):
+            self._set(key,QtGui.QVector4D(*color,1.))
+        self._set('backgroundState',QtGui.QVector4D(field['confidence'],field['change'],*field['motion']))
+        ascii_amount, ink = unit(effects.get('ascii')), unit(effects.get('ink'))
+        if effects.get('reduced_motion'):
+            ink = 0.
+        self._set('displayEffects',QtGui.QVector4D(ascii_amount,ink,max(0.,min(10.,finite(effects.get('ink_phase')))),unit(effects.get('seed'),.37)))
+        window_field = screen_field.get('windows',()) if isinstance(screen_field,dict) else ()
+        rects = desktop_rectangles(window_field if isinstance(window_field,(list,tuple)) else ())
+        for index in range(4):
+            rect = rects[index] if index<len(rects) else {'x':-2.,'y':-2.,'w':0.,'h':0.}
+            self._set('windowField'+str(index),QtGui.QVector4D(*(rect[k] for k in ('x','y','w','h'))))
+        self.effect_state = {'ascii':round(ascii_amount,3),'ink':round(ink,3),'screen_confidence':round(field['confidence'],3)}
         self.upload_ms = (time.perf_counter()-started)*1000
         return True
 
@@ -348,6 +366,7 @@ class GpuScene(QtQuickWidgets.QQuickWidget):
                 "scene_graph_initialized":self.scene_graph_initialized,"frames_rendered":self.frames_rendered,
                 "maximum_clip_texture_bytes":max((c["texture_bytes"] for c in self.manifest.get("clips",{}).values()),default=0),
                 "current_eye_texture_bytes":self.eye_texture_bytes,
+                "effects":dict(self.effect_state),"effect_simulation_buffers":0,
                 "metadata_playback":bool(self.artwork and self.artwork._library is not None),
                 "playback_decoded_bytes":self.artwork._library.decoded_bytes if self.artwork and self.artwork._library else 0,
                 "hit_cache_bytes":self.artwork.hit_cache_bytes if self.artwork else 0,

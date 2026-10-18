@@ -21,6 +21,9 @@ if str(REPO_ROOT) not in sys.path:sys.path.insert(0,str(REPO_ROOT))
 from PySide6 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 from terminus.supervision import notify,set_paused
 from desktop.graph_motion import GraphMotion
+from desktop.directional_motion import DirectionalMotion
+from desktop.background import BackgroundSampler
+from desktop.window_field import WindowField
 from desktop.gaze import GazeAtlas, GazeController, compose_eye_layers
 
 try:
@@ -316,6 +319,10 @@ class Overlay(QtWidgets.QWidget):
         self.art_cache = {}
         self.clip_library = self.clip_player = self.clip_sample = None
         self.skin = SkinEngine(mode=self.preferences.value("skin_mode", "automatic"))
+        self.background = BackgroundSampler(self)
+        self.background_enabled = self.preferences.value("screen_colors", False, type=bool)
+        self.screen_field = self.background.field.sample(self.started)
+        self.window_field = WindowField()
         self.gaze = GazeController()
         self.gaze_atlas = None
         self.gaze_shift = (0.,0.,0.,0.)
@@ -336,6 +343,7 @@ class Overlay(QtWidgets.QWidget):
         self.flight_velocity = QtCore.QPointF()
         self.flight_strength = 0.
         self.flight_bank = 0.
+        self.directional_motion = DirectionalMotion()
         self.facing = self.facing_target = 1.
         self.facing_mode = self.preferences.value("facing", "automatic")
         if self.facing_mode not in {"left", "right", "automatic"}:
@@ -869,7 +877,7 @@ class Overlay(QtWidgets.QWidget):
                 self.graph_paths.append(None)
                 continue
             middle = (self.graph_points[a] + self.graph_points[b]) / 2
-            bow = 8 * math.sin(index * 2.4)
+            bow = self.graph_motion.edge(a,b).get("bow",0.)
             path = QtGui.QPainterPath(self.graph_points[a])
             path.quadTo(middle + QtCore.QPointF(bow, 12 + abs(bow)), self.graph_points[b])
             self.graph_paths.append(path)
@@ -984,50 +992,41 @@ class Overlay(QtWidgets.QWidget):
 
     def draw_graph(self, painter, points, elapsed, contacts):
         state = self.state or {}
-        nodes = {n["id"]: n for n in state.get("nodes", [])}
-        attention = state.get("attention")
+        visual = self.graph_motion.values
         for index, edge in enumerate(state.get("edges", [])):
             a, b = edge["source"], edge["target"]
             if a not in points or b not in points:
                 continue
-            activity = max(amount(nodes[a].get("activation")), amount(nodes[b].get("activation")))
-            weight = amount(edge.get("weight"), .3)
-            focus = a == attention or b == attention
-            visibility = .55 + .45 * (.5 + .5 * math.sin(elapsed * .31 + index * 1.618))
-            alpha = (13 + weight * 24 + activity * 72 + (16 if focus else 0)) * visibility
+            flow = self.graph_motion.edge(a,b)
+            activity,weight,focus = flow["activation"],flow["weight"],flow["focus"]
+            alpha = (13 + weight * 24 + activity * 72 + focus * 16) * flow["visibility"]
             path = self.graph_paths[index]
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.setPen(QtGui.QPen(QtGui.QColor(66, 192, 201, int(alpha * .26)), 4.5 + weight, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap))
             painter.drawPath(path)
             painter.setPen(QtGui.QPen(QtGui.QColor(127, 225, 213, int(alpha)), .55 + weight * .8))
             painter.drawPath(path)
-            if activity > .06:
-                phase = (elapsed * (.08 + activity * .15) + index * .381) % 1
-                pulse = path.pointAtPercent(phase)
-                self.draw_glow(painter, pulse, 5 + activity * 3, (115, 239, 215), 35 + activity * 100)
-        for index, (key, point) in enumerate(points.items()):
-            active = amount(nodes[key].get("activation"))
-            focus = key == attention
-            contacted = key in contacts
-            breath = .75 + .25 * math.sin(elapsed * (.65 + active) + index * 1.7)
-            self.draw_glow(painter, point, 7 + active * 12 + (3 if focus else 0),
-                           (113, 231, 214), (16 + active * 95 + (18 if focus else 0)) * breath)
-            radius = 6 + active * 2 if contacted else 1.2 + active * 2.5 + (1 if focus else 0)
+            if flow["pulse"] > .001:
+                pulse = path.pointAtPercent(flow["phase"])
+                self.draw_glow(painter, pulse, 5 + activity * 3, (115, 239, 215),
+                               (35 + activity * 100) * flow["pulse"])
+        for key, point in points.items():
+            value=visual[key]
+            active,focus,contact = value["activation"],value["focus"],value["contact"]
+            self.draw_glow(painter, point, 7 + active * 12 + focus * 3,
+                           (113, 231, 214), (16 + active * 95 + focus * 18) * value.get("breath",1.))
+            radius = (1-contact)*(1.2 + active * 2.5 + focus) + contact*(6 + active * 2)
             painter.setPen(QtGui.QPen(QtGui.QColor(172, 246, 228, 120 + int(active * 100)), .55))
-            if contacted:
-                # Only nodes physically touched by a rendered arm become a
-                # little shaded pearl, keeping the rest of the field ephemeral.
-                pearl = QtGui.QRadialGradient(point - QtCore.QPointF(radius * .28, radius * .34), radius * 1.35)
-                pearl.setColorAt(0, QtGui.QColor(171, 244, 223, 220))
-                pearl.setColorAt(.30, QtGui.QColor(79, 181, 157, 215))
-                pearl.setColorAt(.65, QtGui.QColor(28, 111, 108, 210))
-                pearl.setColorAt(1, QtGui.QColor(13, 51, 71, 180))
-                painter.setBrush(pearl)
-            else:
-                painter.setBrush(QtGui.QColor(95, 210, 196, int(65 + active * 150)))
+            # A pearl grows continuously as an actual arm makes contact. The
+            # same contact value is used in Qt Quick and in the hit geometry.
+            base=(95,210,196,int(65+active*150))
+            pearl = QtGui.QRadialGradient(point - QtCore.QPointF(radius * .28, radius * .34), radius * 1.35)
+            for stop,color in ((0,(171,244,223,220)),(.30,(79,181,157,215)),(.65,(28,111,108,210)),(1,(13,51,71,180))):
+                pearl.setColorAt(stop,QtGui.QColor(*(round(a+(b-a)*contact) for a,b in zip(base,color))))
+            painter.setBrush(pearl)
             painter.drawEllipse(point, radius, radius)
-            if focus:
-                painter.setPen(QtGui.QPen(QtGui.QColor(159, 244, 221, 45 + int(active * 65)), .7))
+            if focus>.001:
+                painter.setPen(QtGui.QPen(QtGui.QColor(159, 244, 221, int((45 + active * 65)*focus)), .7))
                 painter.setBrush(QtCore.Qt.NoBrush)
                 orbit = radius + 3
                 painter.drawArc(QtCore.QRectF(point.x() - orbit, point.y() - orbit, orbit * 2, orbit * 2), int(elapsed * 23) * 16, 215 * 16)
@@ -1095,6 +1094,7 @@ class Overlay(QtWidgets.QWidget):
             # The decoded frame owns the silhouette and expression. Never
             # crossfade it with another pose or warp it through a texture mesh.
             dragging = self.press_global is not None and self.dragged and self.drag_mode == "window"
+            self.skin.set_screen_field(self.screen_field)
             self.skin.update(now, state=self.state, motion=max(self.flight_strength, .85 if dragging else 0.),
                              touch_age=now-self.touch_started, gesture=(self.gesture(now) or {}).get("kind"),
                              fresh=self.fresh(now), reduced_motion=self.reduced_motion)
@@ -1201,6 +1201,7 @@ class Overlay(QtWidgets.QWidget):
         sample=self.clip_sample
         if sample is None:return
         dragging=self.press_global is not None and self.dragged and self.drag_mode=="window"
+        self.skin.set_screen_field(self.screen_field)
         self.skin.update(now,state=self.state,motion=max(self.flight_strength,.85 if dragging else 0.),
                          touch_age=now-self.touch_started,gesture=(self.gesture(now) or {}).get("kind"),
                          fresh=self.fresh(now),reduced_motion=self.reduced_motion)
@@ -1209,18 +1210,21 @@ class Overlay(QtWidgets.QWidget):
         visual=self.graph_motion.values
         nodes=[{"id":key,"x":point.x(),"y":point.y(),"activation":visual[key]["activation"],
                 "focus":key==attention,"contact":key in contacts,
-                "focusStrength":visual[key]["focus"],"contactStrength":visual[key]["contact"]}
+                "focusStrength":visual[key]["focus"],"contactStrength":visual[key]["contact"],
+                "breath":visual[key].get("breath",1.)}
                for key,point in points.items()]
         edges=[]
         for i,edge in enumerate(state.get("edges",[])):
             a,b=edge["source"],edge["target"]
             if a not in points or b not in points:continue
-            middle=(points[a]+points[b])/2;bow=8*math.sin(i*2.4)
+            flow=self.graph_motion.edge(a,b)
+            middle=(points[a]+points[b])/2;bow=flow["bow"]
             edges.append({"x0":points[a].x(),"y0":points[a].y(),"x1":points[b].x(),"y1":points[b].y(),
                           "cx":middle.x()+bow,"cy":middle.y()+12+abs(bow),"index":i,
-                          "activation":max(visual[a]["activation"],visual[b]["activation"]),
-                          "weight":amount(edge.get("weight"),.3),"focus":a==attention or b==attention,
-                          "focusStrength":max(visual[a]["focus"],visual[b]["focus"])})
+                          "activation":flow["activation"],"phase":flow["phase"],
+                          "visibility":flow["visibility"],"pulse":flow["pulse"],
+                          "weight":flow["weight"],"focus":a==attention or b==attention,
+                          "focusStrength":flow["focus"]})
         tendrils=[]
         for i,(_,curve,active) in enumerate(gestures):
             values=[curve.elementAt(j) for j in range(4)]
@@ -1251,6 +1255,7 @@ class Overlay(QtWidgets.QWidget):
             cursor=(self.awareness["pointer"]["x"],self.awareness["pointer"]["y"],self.awareness["pointer"]["motion"])
                 if self.awareness_enabled and self.awareness.get("pointer",{}).get("available") else None,
             mic_active=self.awareness.get("microphone",{}).get("in_use",False) if self.awareness_enabled else False,
+            screen_field=self.screen_field,effects=self.skin.effect_uniforms(),
             gaze_atlas=self.gaze_atlas,gaze_shift=self.gaze_shift)
         if now-self.last_mask>=.5 or self.input_region.isEmpty():
             # Native hit testing uses source alpha and a few vector curves at
@@ -1401,6 +1406,7 @@ class Overlay(QtWidgets.QWidget):
 
     def animate(self):
         now = time.monotonic()
+        self.update_background(now)
         dt = min(.15, max(0., now - self.last_frame))
         self.last_frame = now
         target = 1. if (self.state or {}).get("behavior") in {"sleep", "dream"} and (self.gpu_scene is not None or not self.sleep_art.isNull()) else 0.
@@ -1420,7 +1426,9 @@ class Overlay(QtWidgets.QWidget):
         if self.gpu_scene is not None and self.gpu_scene.available:
             if self.reduced_motion:return 250
             if not self.fresh(now):return 500
-            if self.gaze.settling:return 33
+            if self.gaze.settling or self.directional_motion.settling:return 33
+            display=self.skin.effect_uniforms()
+            if display.get("ink",0)>0 or .005<display.get("ascii",0)<.995:return 33
             if self.graph_motion.settling:return 33
             if self.hovering or self.press_global is not None or now-self.touch_started<1.6:return 50
             if self.gesture(now) or self.roam_goal is not None and self.can_roam(now):return 66
@@ -1442,7 +1450,7 @@ class Overlay(QtWidgets.QWidget):
                 # speed just because the next source frame is near its boundary.
                 floor = 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
                 interval = max(interval, floor)
-        if not self.reduced_motion and self.fresh(now) and self.gaze.settling:
+        if not self.reduced_motion and self.fresh(now) and (self.gaze.settling or self.graph_motion.settling or self.directional_motion.settling):
             interval = min(interval,50 if sys.platform == "darwin" else 33)
         return interval
 
@@ -1486,6 +1494,7 @@ class Overlay(QtWidgets.QWidget):
             self.flight_velocity = QtCore.QPointF()
             self.flight_strength = self.flight_bank = self.typing_blend = 0.
             self.facing = self.facing_target
+            self.directional_motion.sample(now,0.,0.,facing=self.facing_target,reduced_motion=True)
             return
         dragging = self.press_global is not None and self.dragged and self.drag_mode == "window"
         target_velocity = QtCore.QPointF()
@@ -1499,9 +1508,6 @@ class Overlay(QtWidgets.QWidget):
         if not dragging and self.can_roam(now):
             strength = max(strength, min(.32, speed / 70))
         self.flight_strength += (strength - self.flight_strength) * (1 - math.exp(-dt / .22))
-        bank = max(-14, min(14, self.flight_velocity.x() / 45))
-        bank += max(-5, min(5, self.flight_velocity.y() / 80)) * (1 if self.facing_target >= 0 else -1)
-        self.flight_bank += (bank - self.flight_bank) * (1 - math.exp(-dt / .18))
 
         desired = self.facing_target
         if self.facing_mode in {"left", "right"}:
@@ -1525,6 +1531,9 @@ class Overlay(QtWidgets.QWidget):
             self.facing_target = desired
             self.last_facing_change = now
         self.facing = self.facing_target
+        self.flight_bank = self.directional_motion.sample(
+            now,self.flight_velocity.x(),self.flight_velocity.y(),
+            facing=self.facing_target,active=self.flight_strength,frozen=not self.fresh(now))
 
         gesture = self.gesture(now)
         imitate = (gesture and gesture.get("kind") == "imitate" and self.typing_recent(now)
@@ -1782,6 +1791,7 @@ class Overlay(QtWidgets.QWidget):
         self.preferences.setValue("pause_roaming", self.roaming_paused)
         self.preferences.setValue("reduced_motion", self.reduced_motion)
         self.preferences.setValue("desktop_awareness", self.awareness_enabled)
+        self.preferences.setValue("screen_colors", self.background_enabled)
         self.preferences.setValue("graph_visibility", self.graph_visibility)
         self.preferences.setValue("facing", self.facing_mode)
         self.preferences.setValue("skin_mode", self.skin.mode)
@@ -1864,6 +1874,55 @@ class Overlay(QtWidgets.QWidget):
         sent = bool(observer and observer.request_input_monitoring())
         print(f"Terminus Input Monitoring request: desktop_granted={granted} observer_requested={sent}", flush=True)
 
+    def update_background(self, now):
+        if not self.fresh(now) or self.reduced_motion:
+            self.background.poll(now,(),enabled=False,own_pid=os.getpid())
+            return
+        active=(self.background_enabled and self.fresh(now) and not self.reduced_motion
+                and self.skin.mode!="off" and self.isVisible()
+                and QtWidgets.QApplication.platformName() not in {"offscreen","minimal"})
+        rect=(self.x(),self.y(),self.width(),self.height())
+        if sys.platform.startswith("linux"):
+            ratio=self.devicePixelRatioF()
+            rect=tuple(value*ratio for value in rect)
+        self.background.poll(now,rect,enabled=active,own_pid=os.getpid())
+        self.screen_field=self.background.field.sample(now)
+        # Geometry bends the cloud, but is never drawn and never enters memory.
+        windows=[]
+        if self.awareness_enabled and 0<=now-self.awareness.get("observed_at",0)<=3:
+            screen=self.home_screen.virtualGeometry() if self.home_screen else self.geometry()
+            for r in self.awareness.get("windows",{}).get("rects",[])[:8]:
+                left=screen.x()+r["x"]*screen.width()-self.x()
+                top=screen.y()+r["y"]*screen.height()-self.y()
+                right=left+r["width"]*screen.width();bottom=top+r["height"]*screen.height()
+                x0,y0=max(0.,left/self.width()),max(0.,top/self.height())
+                x1,y1=min(1.,right/self.width()),min(1.,bottom/self.height())
+                if x1>x0 and y1>y0:
+                    windows.append({"x":x0,"y":y0,"width":x1-x0,"height":y1-y0})
+        if not self.awareness_enabled:
+            self.window_field.clear()
+        self.screen_field["windows"],self.screen_field["motion"]=self.window_field.sample(windows,now)
+
+    def toggle_background(self, checked=False):
+        self.background_enabled=bool(checked)
+        if not self.background_enabled:
+            self.background.close()
+            self.screen_field=self.background.field.sample(time.monotonic())
+        self.save_view_preferences()
+
+    def request_screen_colors(self, checked=False):
+        if sys.platform=="darwin":
+            from desktop.background_macos import request_access
+            request_access()
+            self.background_enabled=True
+            self.save_view_preferences()
+
+    def release_ink(self, checked=False):
+        if self.reduced_motion:return
+        self.skin.release_ink(time.monotonic())
+        self.interaction_until=time.monotonic()+10
+        self.animation.setInterval(33)
+
     def make_menu(self):
         menu = QtWidgets.QMenu(self)
         menu.addAction("&Open habitat", lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.client.url)))
@@ -1896,6 +1955,15 @@ class Overlay(QtWidgets.QWidget):
             action.setChecked(self.graph_visibility == mode)
             menu.aboutToShow.connect(lambda item=action, value=mode: item.setChecked(self.graph_visibility == value))
         skin = menu.addMenu("&Living skin")
+        backdrop=skin.addAction("Match colors behind me")
+        backdrop.setCheckable(True)
+        backdrop.setChecked(self.background_enabled)
+        backdrop.triggered.connect(self.toggle_background)
+        menu.aboutToShow.connect(lambda:backdrop.setChecked(self.background_enabled))
+        if sys.platform=="darwin":
+            skin.addAction("Allow screen colors...", self.request_screen_colors)
+        skin.addAction("Release an ink cloud",self.release_ink)
+        skin.addSeparator()
         for mode in SKIN_MODES:
             action = skin.addAction(mode.capitalize(), lambda checked=False, value=mode: self.set_skin_mode(value))
             action.setCheckable(True)
@@ -1972,6 +2040,7 @@ class Overlay(QtWidgets.QWidget):
 
     def closeEvent(self, event):
         self.save_view_preferences()
+        self.background.close()
         if self.native_input_shape is not None:self.native_input_shape.close()
         self.animation.stop()
         self.asset_timer.stop()
@@ -2027,6 +2096,7 @@ class Overlay(QtWidgets.QWidget):
                          "motion_px":round(max(abs(value) for value in (self.gaze_atlas.displacements(self.clip_sample.clip,self.clip_sample.index,self.gaze_shift)
                                              if self.gaze_atlas is not None and self.clip_sample is not None else (0.,)*4)),2)},
                 "graph_visibility": self.graph_visibility, "graph_gain": self.graph_gain,
+                "background_colors": self.background.diagnostics(),
                 "graphics": self.gpu_scene.diagnostics() if self.gpu_scene is not None else {"backend":"raster-sprite-fallback","error":getattr(self,"gpu_error",None)},
                 "skin": {**self.skin.diagnostics(),"backend":"gpu-fragment-shader","eye_mask_valid":True,"evaluation_ms":0.} if self.gpu_scene is not None and self.gpu_scene.available else self.skin.diagnostics(),
                 "desktop_awareness": {"enabled": self.awareness_enabled, "available": bool(self.awareness.get("available")),
@@ -2086,10 +2156,6 @@ def main(argv=None):
     client = CoreClient(url, args.data_dir.resolve())
     overlay = Overlay(client, REPO_ROOT / "web" / "assets", args.scale)
     mac_presence = None
-    if sys.platform == "darwin" and not args.smoke_test:
-        from desktop.macos import MacPresence
-        mac_presence = MacPresence(overlay)
-        overlay.mac_presence = mac_presence
     render_guard=None
     if args.renderer!="raster" and not args.smoke_test:
         from desktop.render_guard import RenderGuard
@@ -2098,6 +2164,13 @@ def main(argv=None):
             if not overlay.enable_gpu():render_guard.unavailable()
         else:
             overlay.gpu_error=render_guard.reason
+    if sys.platform == "darwin" and not args.smoke_test:
+        # QQuickWidget must select the Metal backing store before winId()
+        # creates the Cocoa panel. A raster-backed native window can report
+        # rendered Metal frames while presenting completely transparent pixels.
+        from desktop.macos import MacPresence
+        mac_presence = MacPresence(overlay)
+        overlay.mac_presence = mac_presence
     if args.no_roam:
         overlay.roaming_paused = True
     if args.reduced_motion:
@@ -2119,12 +2192,17 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, lambda signum, frame: app.quit())
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())
     permission_request = {"pending": False}
+    screen_permission_request = {"pending": False}
     bring_request = {"pending": False}
     if sys.platform == "darwin" and not args.smoke_test:
         signal.signal(signal.SIGUSR1, lambda signum, frame: permission_request.__setitem__("pending", True))
+        signal.signal(signal.SIGHUP, lambda signum, frame: screen_permission_request.__setitem__("pending", True))
         signal.signal(signal.SIGUSR2, lambda signum, frame: bring_request.__setitem__("pending", True))
 
     def process_permission_request():
+        if screen_permission_request["pending"]:
+            screen_permission_request["pending"] = False
+            overlay.request_screen_colors()
         if permission_request["pending"]:
             permission_request["pending"] = False
             overlay.request_mac_input_monitoring()

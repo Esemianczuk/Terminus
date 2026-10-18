@@ -140,6 +140,8 @@ class GazeControllerTests(unittest.TestCase):
     def test_native_gaze_frame_pacing_is_temporary(self):
         fake = SimpleNamespace(gpu_scene=SimpleNamespace(available=True), reduced_motion=False,
                                fresh=lambda now: True, gaze=SimpleNamespace(settling=True),
+                               directional_motion=SimpleNamespace(settling=False),
+                               skin=SimpleNamespace(effect_uniforms=lambda:{}),
                                graph_motion=SimpleNamespace(settling=False), hovering=False,
                                press_global=None, touch_started=-math.inf, gesture=lambda now: None,
                                roam_goal=None, state={"behavior": "idle"})

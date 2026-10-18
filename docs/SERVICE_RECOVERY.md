@@ -65,7 +65,7 @@ Run those commands from the intended checkout. Removing this renderer marker doe
 
 The native window and its GPU child do not accept keyboard focus. A disposable process performs read-only OS metadata queries; the GUI never waits synchronously for those queries. The observer has no API to inject or grab input, activate apps, request accessibility access or open an audio stream. Stale or malformed output is discarded and a stalled child is terminated with bounded cleanup. Observation can be disabled from the menu or with `--no-awareness`.
 
-On macOS, aggregate typing requires an existing Input Monitoring grant; Terminus only checks it and never requests access. Linux microphone detection reads audio-server stream metadata and records no sound. No observer reads text, key identities, window titles or screenshots. These boundaries reduce the application's ability to interfere with input; they are not a guarantee against faults elsewhere in the OS, driver or desktop session.
+On macOS, aggregate typing requires an Input Monitoring grant. Startup only checks it; the explicit menu command can request access. Linux microphone detection reads audio-server stream metadata and records no sound. No activity observer reads text, key identities or window titles. The separate opt-in camouflage worker briefly samples background pixels and returns only four averaged colors; those colors never enter memory. These boundaries reduce the application's ability to interfere with input; they are not a guarantee against faults elsewhere in the OS, driver or desktop session.
 
 ## Stop, restart and update
 

@@ -16,6 +16,7 @@ import time
 
 import numpy as np
 from PySide6 import QtCore, QtGui
+from desktop.effects import DisplayEffects, screen_uniforms
 
 LUMA = np.array([.2126, .7152, .0722], dtype=np.float32)
 
@@ -192,7 +193,7 @@ def crimson(s, t):
 # Register another here to expose it in the menu without changing compositing.
 PATTERNS = {'shimmer': shimmer, 'cascade': cascade, 'camouflage': camouflage, 'crimson': crimson}
 LAYERS = tuple(PATTERNS)
-MODES = ('automatic', *LAYERS, 'off')
+MODES = ('automatic', *LAYERS, 'ascii', 'off')
 
 
 def pattern(name, s, t):
@@ -228,6 +229,17 @@ class SkinEngine:
         self.material_key = self.material = None
         self.render_ms = 0.
         self.mask_valid = False
+        self.effects = DisplayEffects()
+        self.screen_field = screen_uniforms()
+
+    def set_screen_field(self, field=None):
+        self.screen_field = screen_uniforms(field)
+
+    def effect_uniforms(self):
+        return self.effects.uniforms()
+
+    def release_ink(self, now=None):
+        return self.effects.release_ink(now)
 
     def clear(self):
         self.cache.clear(); self.cache_bytes = 0
@@ -239,6 +251,11 @@ class SkinEngine:
                gesture=None, fresh=True, reduced_motion=False):
         state = state or {}
         if not fresh:
+            # Accessibility changes apply even while the core is unreachable.
+            # Freeze the effect clock but discard a plume immediately when
+            # reduced motion is enabled; it must not reappear on reconnect.
+            if reduced_motion:
+                self.effects.update(0.,mode=self.mode,reduced=True)
             self.last_now, self.last_live = now, False
             return
         sleeping = state.get('behavior') in {'sleep','dream'}
@@ -262,6 +279,8 @@ class SkinEngine:
             speed += movement*1.2
         elif self.mode in LAYERS:
             target[LAYERS.index(self.mode)] = 1.
+        elif self.mode == 'ascii':
+            target = weights(shimmer=.6, cascade=.4)
         else:
             strength = 0.
         dt = 0. if self.last_now is None else min(.2,max(0.,now-self.last_now))
@@ -275,6 +294,8 @@ class SkinEngine:
             self.intensity += (strength-self.intensity)*blend
         if resume and not reduced_motion:
             self.phase += dt*speed
+        self.effects.update(dt if resume else 0., mode=self.mode, sleeping=sleeping,
+                            activity=max(0., min(1., motion)), reduced=reduced_motion)
         self.last_now, self.last_live = now, fresh
 
     def shade(self, sample, *, width=None, height=None):
@@ -309,7 +330,9 @@ class SkinEngine:
         # Discrete shader ticks do not reset or seek the GIF player. The same
         # quantized clock freezes exactly when disconnected or motion-reduced.
         t = round(self.phase*15)/15
-        uniforms = (t,tuple(np.round(self.weights,3)),round(self.intensity,3))
+        field = self.screen_field
+        uniforms = (t,tuple(np.round(self.weights,3)),round(self.intensity,3),
+                    field['colors'],round(field['confidence'],3),round(self.effects.ascii,3))
         result_key = (key,uniforms)
         if result_key == self.result_key:
             return self.result
@@ -324,6 +347,13 @@ class SkinEngine:
                 if weight < .002:
                     continue
                 tint, local = pattern(name,s,t)
+                if name == 'camouflage' and field['confidence'] > 0:
+                    a,b,c,d = (np.asarray(color,np.float32) for color in field['colors'])
+                    # Raster fallback retains the same coarse pigment palette;
+                    # GPU additionally registers it in desktop coordinates.
+                    sx,sy = s.x[...,None],s.y[...,None]
+                    background = (a*(1-sx)+b*sx)*(1-sy)+(c*(1-sx)+d*sx)*sy
+                    tint = tint*(1-field['confidence'])+background*field['confidence']
                 amount = local*float(weight)
                 target += tint*amount[...,None]
                 coverage += amount
@@ -343,6 +373,20 @@ class SkinEngine:
         amount = np.clip(pigment[:,3]*self.intensity*s.influence,0,.94)[:,None]
         pixels = s.pixels.copy()
         pixels.reshape(-1,4)[s.active,:3] = np.rint(np.clip(s.base*(1-amount)+color*amount,0,1)*255).astype(np.uint8)
+        if self.effects.ascii > .001:
+            # A tiny analytic monospace alphabet, sampled at output resolution.
+            # The protected eye set never enters this scatter or alpha update.
+            yy,xx = np.divmod(s.active,width)
+            gx,gy = (xx*48/width)%1-.5,(yy*52/height)%1-.5
+            h = np.abs(gy)<.065; v = np.abs(gx)<.065
+            diagonal = (np.abs(gx-gy)<.085)|(np.abs(gx+gy)<.085)
+            dot = (gx*gx+(gy-.25)**2)<.025
+            ring = np.abs(np.sqrt(gx*gx+gy*gy)-.29)<.065
+            glyph = np.where(s.light<.2,dot,np.where(s.light<.4,diagonal,np.where(s.light<.6,h|v,ring|h|v))).astype(np.float32)
+            influence = self.effects.ascii*s.influence
+            out = pixels.reshape(-1,4)
+            alpha = (1-influence)+influence*(.035+.965*glyph)
+            out[s.active,3] = np.rint(out[s.active,3]*alpha).astype(np.uint8)
         # Eyes, antialias guards, alpha and transparent RGB never enter the
         # scatter above. Their source bytes remain untouched by construction.
         self.result = QtGui.QImage(pixels.data,width,height,pixels.strides[0],QtGui.QImage.Format_RGBA8888).copy()

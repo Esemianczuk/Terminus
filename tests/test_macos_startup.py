@@ -1,6 +1,9 @@
 """The Mac launch policy must not activate a process with no typing window."""
 import os
+from pathlib import Path
+import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -9,6 +12,37 @@ from desktop.macos import MacPresence,prepare_macos_environment,configure_macos_
 from desktop.macos_permission import request_input_monitoring
 
 class MacStartupTests(unittest.TestCase):
+    def test_gpu_is_selected_before_native_panel_creation(self):
+        # Exercise the production main() bootstrap without a GUI event loop or
+        # any native Mac calls. A premature winId() is the invisible-Metal bug.
+        code = '''
+import sys
+from unittest.mock import patch
+import desktop.macos as mac
+import desktop.overlay as overlay
+events=[]
+def gpu(widget): events.append('gpu'); return True
+def panel(widget):
+    assert events == ['gpu'], events
+    events.append('native-panel')
+    return object()
+with patch.object(sys,'platform','darwin'), \\
+     patch.object(mac,'prepare_macos_environment',lambda:None), \\
+     patch.object(mac,'configure_macos_application',lambda:None), \\
+     patch.object(mac,'MacPresence',panel), \\
+     patch.object(overlay.Overlay,'enable_gpu',gpu), \\
+     patch.object(overlay.QtWidgets.QApplication,'exec',lambda self:0), \\
+     patch.object(overlay.QtWidgets.QSystemTrayIcon,'isSystemTrayAvailable',lambda:False):
+    assert overlay.main(['--data-dir',sys.argv[1],'--no-awareness','--no-roam']) == 0
+assert events == ['gpu','native-panel'], events
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([sys.executable, '-c', code, directory],
+                                    cwd=Path(__file__).resolve().parents[1],
+                                    env={**os.environ, 'QT_QPA_PLATFORM':'offscreen'},
+                                    text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_foreground_transform_is_disabled_in_this_process_only(self):
         with patch.dict(os.environ,{},clear=True):
             prepare_macos_environment()

@@ -3,7 +3,7 @@
 Terminus uses the Qt 6 scenegraph and its Rendering Hardware Interface. Qt picks
 the platform graphics backend, including Metal on a Mac. The same shader package
 contains SPIR-V, GLES, desktop GLSL, HLSL and Metal variants. The rendering code
-does not select a GPU, initialize a separate compute workload or capture a screen.
+does not select a GPU or initialize a separate compute workload. Optional background color sampling runs in a separate bounded process and supplies twelve RGB values, never a screen texture.
 
 The existing native presence window still owns dragging and the small input
 shape. Its transparent `QQuickWidget` child renders the complete scene: the
@@ -63,18 +63,16 @@ contacts. There is no raster canvas to shade, copy, brighten and upload on every
 tick.
 
 `desktop/graph_motion.py` eases the visible anchor, node positions, activation,
-focus and contact strength toward real core targets with a 0.18-second
-exponential time constant. Graph curves, limbs and hit geometry use the same
+focus and contact strength toward real core targets with damped position easing and smooth activity envelopes. Graph curves, limbs and hit geometry use the same
 filtered coordinates, so a limb cannot trail behind a separately moving node.
-The view temporarily uses about thirty updates per second while those changes
+Connection travel phases integrate velocity independently of activity; stable connection IDs also keep curve shape and signal phase intact when snapshot ordering changes. The view temporarily uses about thirty updates per second while those changes
 settle, then returns to its quiet cadence. Reduced motion applies targets
 directly; stale state freezes the presentation. This filter changes no organism
 state, creates no events and owns no timer or second simulation.
 
 Coarse window rectangles remain private awareness used for gaze and exploration;
 they are not drawn as boxes behind the memory graph. Cursor movement and an
-available microphone-use flag can have small visual cues. These are metadata,
-not screenshots, window titles, text or recorded audio. Missing platform
+available microphone-use flag can have small visual cues. These are metadata. The independent opt-in color worker samples the background only for rendering; it does not send images or colors to learning. Neither observer reads window titles, typed text or recorded audio. Missing platform
 permissions or unavailable sensors leave the relevant cues absent.
 
 ## Rebuilding and measuring
@@ -111,3 +109,9 @@ Qt's graphics portability does not supply mobile application integration. A
 future Android or iOS app can reuse the scene, shader and asset format, but still
 needs platform packaging, lifecycle management and permissions. An iPhone app
 cannot provide an unrestricted overlay above other applications.
+
+## macOS native presentation
+
+Create the GPU child before creating the top-level native window. On macOS, calling `winId()` first creates a raster-backed native window; adding a Metal `QQuickWidget` afterward can render internally while the compositor sees an empty panel. The startup sequence now establishes the GPU backing store before configuring the nonactivating panel.
+
+`python scripts/verify_macos_presentation.py --output work/mac-presentation` checks the actual compositor image of its own panel, then moves and resizes it and checks again. It also checks that the frontmost application and keyboard-focus eligibility are unchanged. This own-window test does not need permission to capture other applications. GPU frame counts alone are not treated as visibility proof.

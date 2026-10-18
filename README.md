@@ -10,7 +10,7 @@ There is a little learning behind it. Repeated events become familiar. A small r
 
 ## Install
 
-Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics, including ordinary integrated graphics. The Mac launch agent currently uses the raster renderer because the Qt/Metal scenegraph can report healthy frames while its transparent desktop panel stays invisible. The GPU renderer remains available for direct testing with `--renderer gpu`. No model download or cloud inference account is needed.
+Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics, including ordinary integrated graphics: Metal on macOS and OpenGL on the tested Linux desktop. No model download or cloud inference account is needed. Windows desktop installation is not packaged yet.
 
 ```sh
 git clone https://github.com/Esemianczuk/Terminus.git
@@ -30,7 +30,7 @@ uv run python -m terminus serve
 uv run python desktop/overlay.py
 ```
 
-The desktop needs a logged-in graphical session. macOS uses launch agents; Linux uses systemd user services. X11 can notice window bounds, pointer movement and aggregate typing. On macOS, window and pointer metadata work without text access; typing rhythm is available only when Input Monitoring permission was already granted. Terminus never asks for that permission. Native Wayland awareness is not implemented. Linux can also notice that an audio application has a microphone stream open, without opening a microphone or recording audio.
+The desktop needs a logged-in graphical session. macOS uses launch agents; Linux uses systemd user services. X11 can notice window bounds, pointer movement and aggregate typing. On macOS, window and pointer metadata work without text access; typing rhythm is available only when Input Monitoring permission was already granted. An explicit menu command can request that permission; startup never prompts. Native Wayland awareness is not implemented. Linux can also notice that an audio application has a microphone stream open, without opening a microphone or recording audio.
 
 His body runs on Qt Quick's portable graphics layer. The artwork is packed with motion fields computed ahead of time, so adjacent poses can flow into each other while skin colors move independently. The same scene and shader assets give a future Android or iPhone version somewhere to start. There are no native mobile apps yet; other devices can use the browser habitat.
 
@@ -38,11 +38,17 @@ His body runs on Qt Quick's portable graphics layer. The artwork is packed with 
 
 Click to give him a nudge. Drag to carry him. Right-click for size, movement, facing and skin controls. Empty space around him lets clicks pass through to your other windows.
 
-The desktop window does not accept keyboard focus. Its optional observer runs in a separate process and reports small, bounded summaries. It never reads typed characters, key identities, window titles, screenshots or audio. Turn **Notice windows and typing** off in the menu to stop observation. Waking visits and little excursions have time limits and cooldowns, so a busy day still leaves room for naps.
+The desktop window does not accept keyboard focus. Its optional observer runs in a separate process and reports small, bounded summaries. It notices aggregate typing rhythm, pointer movement and window geometry. It never reads typed characters, key identities, window titles, clipboard contents or audio. Turn **Notice windows and typing** off in the menu to stop that observation. Waking visits and little excursions have time limits and cooldowns, so a busy day still leaves room for naps.
+
+**Living skin → Match colors behind me** is a separate, optional visual sensor. It samples the background beneath him and immediately reduces it to four colors. The colors ease into his camouflage, preserving the painted light, texture and eyes. On macOS this needs Screen Recording permission; **Allow screen colors...** opens the system request. X11 uses the compositor's existing window images and leaves input alone. These temporary pixels and colors are never saved, sent to the core, uploaded, or used for learning. Turning the option off discards them.
+
+His skin can also dissolve partly into ASCII, or become a whole little creature made of symbols with his eyes still intact. Occasionally he lets out an ink cloud. It curls and thins over several seconds, with currents influenced by nearby window edges and motion. Move a window beneath him and the cloud responds. **Release an ink cloud** lets you try it; **Reduced motion** suppresses it. The fluid is a bounded procedural shader, so it needs no simulation grid or growing trail of particles.
 
 **Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back or sign in again.
 
-The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Their exact timing is animation, not a literal trace of each calculation.
+The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Each connection keeps its own continuous travel phase, so a burst of activity brightens the flow without teleporting it. Their exact timing is animation, not a literal trace of each calculation. His body can bank and turn while the graph stays upright.
+
+![Camouflage, partial ASCII and a drifting ink cloud in a controlled renderer preview](docs/screenshots/living-displays.gif)
 
 His state lives in `.local/`, outside Git. Keep that folder. Updating the source does not give you a new creature.
 
@@ -67,6 +73,8 @@ uv run python scripts/servicectl.py status
 ## A shared memory bank
 
 Each computer has its own creature, private model and history. There is also an optional public model that they can learn from together.
+
+Think of this as sharing learned tendencies. A small network adjusts numerical connections when categories of events recur in an order. Those connections are a black box that can influence what draws his attention and which reactions become familiar. The bank is not a diary of your desktop and does not contain a searchable collection of things people typed. It is also not an LLM or a claim that he understands what you are doing.
 
 That second model receives only seven fixed event categories: `context`, `poke`, `drag`, `presence`, `git`, `activity` and `time`. It never receives the context strings, typed characters, passwords, window titles, file contents, timestamps, geometry or event logs. Contributions contain small, clipped numerical changes to its 24-unit recurrent network.
 
@@ -93,9 +101,9 @@ The API defaults to loopback and still uses an authenticated session cookie. Aut
 
 ## What he learns
 
-The private predictor begins with random weights and learns event sequences. Familiarity changes responses; associations shape attention; sleep replays retained experience. His temperament, motives, gestures and symbol grammar are designed behavior, with learning influencing their choices.
+The private predictor begins with random weights and learns event sequences. It can pick up a pattern such as activity followed by a quiet interval; it does not receive the words you typed during that activity. Familiarity changes responses; associations shape attention; sleep replays retained experience. His temperament, motives, gestures and symbol grammar are designed behavior, with learning influencing their choices.
 
-He does not understand your screen or read what you type. He will not grow new abilities just by being left running. A controlled repeating-sequence test demonstrates basic prediction learning; longer-term character is something to watch develop.
+He does not understand your screen or read what you type. The optional four-color camouflage sensor belongs entirely to the renderer. He will not grow new abilities just by being left running. A controlled repeating-sequence test demonstrates basic prediction learning; longer-term character is something to watch develop.
 
 ## Development
 

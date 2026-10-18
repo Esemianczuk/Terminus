@@ -45,6 +45,16 @@ Item {
     property real pivotOffset: 30
     property bool mirror: false
     property bool bodyVisible: true
+    property vector4d backgroundTL: Qt.vector4d(.14,.25,.28,1)
+    property vector4d backgroundTR: Qt.vector4d(.44,.56,.36,1)
+    property vector4d backgroundBL: Qt.vector4d(.22,.37,.39,1)
+    property vector4d backgroundBR: Qt.vector4d(.77,.62,.41,1)
+    property vector4d backgroundState: Qt.vector4d(0,0,0,0)
+    property vector4d displayEffects: Qt.vector4d(0,0,10,.37)
+    property vector4d windowField0: Qt.vector4d(-2,-2,0,0)
+    property vector4d windowField1: Qt.vector4d(-2,-2,0,0)
+    property vector4d windowField2: Qt.vector4d(-2,-2,0,0)
+    property vector4d windowField3: Qt.vector4d(-2,-2,0,0)
     // No input handlers, focus scopes, timers or autonomous animation clocks.
     focus: false
     activeFocusOnTab: false
@@ -58,6 +68,26 @@ Item {
         width: 440; height: 340
         scale: Math.min(scene.width/440,scene.height/340)
         transformOrigin: Item.TopLeft
+        ShaderEffect {
+            // Finite, purely analytic plume. No simulation texture, feedback
+            // framebuffer, screen image or autonomous animation clock.
+            width: 440; height: 340
+            visible: scene.bodyVisible && scene.displayEffects.y>.0001
+            property vector4d bodyRect: scene.bodyRect
+            property vector4d backgroundTL: scene.backgroundTL
+            property vector4d backgroundTR: scene.backgroundTR
+            property vector4d backgroundBL: scene.backgroundBL
+            property vector4d backgroundBR: scene.backgroundBR
+            property vector4d backgroundState: scene.backgroundState
+            property vector4d displayEffects: scene.displayEffects
+            property vector4d windowField0: scene.windowField0
+            property vector4d windowField1: scene.windowField1
+            property vector4d windowField2: scene.windowField2
+            property vector4d windowField3: scene.windowField3
+            fragmentShader: Qt.resolvedUrl("../shaders/ink.frag.qsb")
+            blending: true
+            onStatusChanged: if (status === ShaderEffect.Error) scene.rendererError(log)
+        }
         // Window geometry remains private awareness; it is not drawn as UI
         // boxes behind the organism's memory graph.
         Image {
@@ -82,7 +112,7 @@ Item {
                 property real active: entry.activation
                 property real strength: entry.weight
                 property real focusStrength: entry.focusStrength===undefined ? (entry.focus?1:0) : scene.alpha(entry.focusStrength)
-                property real visibility: .55+.45*(.5+.5*Math.sin(scene.clock*.31+entry.index*1.618))
+                property real visibility: entry.visibility===undefined ? 1 : entry.visibility
                 property real edgeAlpha: scene.alpha((13+strength*24+active*72+focusStrength*16)/255*visibility*scene.graphGain)
                 Shape {
                     preferredRendererType: Shape.CurveRenderer
@@ -104,13 +134,13 @@ Item {
                     }
                 }
                 Image {
-                    visible: edgeItem.active>.06
+                    visible: opacity>.001
                     source: scene.glowSourceUrl
                     width: 14+edgeItem.active*8; height: width
-                    property real phase: (scene.clock*(.08+edgeItem.active*.15)+edgeItem.entry.index*.381)%1
+                    property real phase: edgeItem.entry.phase===undefined ? (scene.clock*.08+edgeItem.entry.index*.381)%1 : edgeItem.entry.phase
                     property point position: scene.point(edgeItem.entry,phase)
                     x: position.x-width/2; y: position.y-height/2
-                    opacity: scene.alpha((35+edgeItem.active*100)/255*scene.graphGain)
+                    opacity: scene.alpha((35+edgeItem.active*100)/255*scene.graphGain*(edgeItem.entry.pulse===undefined ? 1 : edgeItem.entry.pulse))
                 }
             }
         }
@@ -129,7 +159,7 @@ Item {
                     source: scene.glowSourceUrl
                     width: (7+nodeItem.active*12+nodeItem.focusStrength*3)*3
                     height: width; x: -width/2; y: -height/2
-                    opacity: scene.alpha((16+nodeItem.active*95+nodeItem.focusStrength*18)/255*scene.graphGain*(.75+.25*Math.sin(scene.clock*(.65+nodeItem.active)+nodeItem.entry.index*1.7)))
+                    opacity: scene.alpha((16+nodeItem.active*95+nodeItem.focusStrength*18)/255*scene.graphGain*(nodeItem.entry.breath===undefined ? 1 : nodeItem.entry.breath))
                 }
                 Rectangle {
                     x: -nodeItem.radius; y: -nodeItem.radius
@@ -224,6 +254,14 @@ Item {
                 property real clock: scene.skinClock
                 property real intensity: scene.skinIntensity
                 property real morphStrength: scene.morphStrength
+                property vector4d backgroundTL: scene.backgroundTL
+                property vector4d backgroundTR: scene.backgroundTR
+                property vector4d backgroundBL: scene.backgroundBL
+                property vector4d backgroundBR: scene.backgroundBR
+                property vector4d backgroundState: scene.backgroundState
+                property vector4d displayEffects: scene.displayEffects
+                property vector4d bodyRect: scene.bodyRect
+                property vector4d bodyTransform: Qt.vector4d(scene.bank,scene.mirror?-1:1,scene.pivotOffset,0)
                 fragmentShader: Qt.resolvedUrl("../shaders/body.frag.qsb")
                 blending: true
                 onStatusChanged: if (status === ShaderEffect.Error) scene.rendererError(log)
