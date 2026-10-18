@@ -111,14 +111,14 @@ def test_invalid_oversize_and_future_markers_choose_safe_fallback(tmp_path, payl
     guard = RenderGuard(tmp_path, clock=lambda: 100., pid=123)
     assert not guard.begin() and guard.latched
     assert json.loads(path.read_text())["count"] == 2
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_marker_is_atomic_private_and_contains_only_version_pid_time_count(tmp_path):
     guard = RenderGuard(tmp_path, clock=lambda: 100., pid=123)
     assert guard.begin()
     assert set(json.loads(guard.path.read_text())) == {"schema", "pid", "time", "count"}
-    assert stat.S_IMODE(guard.path.stat().st_mode) == 0o600
+    if os.name != "nt":assert stat.S_IMODE(guard.path.stat().st_mode) == 0o600
     assert list(tmp_path.iterdir()) == [guard.path]
 
 
@@ -126,7 +126,10 @@ def test_symlink_target_is_never_read_changed_or_removed(tmp_path):
     target = tmp_path / "unrelated"
     target.write_text("private")
     path = tmp_path / MARKER_NAME
-    path.symlink_to(target)
+    try:path.symlink_to(target)
+    except OSError as error:
+        if os.name=="nt" and getattr(error,"winerror",None)==1314:pytest.skip("Windows developer mode or symlink privilege is needed")
+        raise
     guard = RenderGuard(tmp_path, clock=lambda: 100., pid=123)
     assert guard.begin() is False
     assert target.read_text() == "private"

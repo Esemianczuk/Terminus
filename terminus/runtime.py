@@ -22,3 +22,13 @@ def find_uv():
         if candidate and Path(candidate).is_file():
             return candidate
     raise RuntimeError('Install uv and add it to PATH before installing or updating Terminus.')
+
+
+def find_git():
+    path=shutil.which('git')
+    if path:return path
+    if os.name=='nt':
+        for base in (os.environ.get('ProgramFiles','C:/Program Files'),str(Path.home()/'AppData/Local/Programs')):
+            path=Path(base)/'Git/cmd/git.exe'
+            if path.is_file():return str(path)
+    raise RuntimeError('Install Git before updating Terminus.')

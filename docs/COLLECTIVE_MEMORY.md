@@ -34,6 +34,8 @@ Use `scripts/collective.py status` to inspect bank round, local category observa
 
 ## Paired machines
 
-An optional existing SSH alias can relay validated numeric outboxes through a machine with GitHub publishing access. The relay retrieves only the fixed public contribution format. It never copies another machine's SQLite database, token, contexts or private model. A peer drops exported outbox entries after it observes their digests in the public bank. Direct peer connectivity is optional; each machine can pull the bank independently on any network and keep training offline.
+One publisher can use several existing SSH aliases to relay validated numeric outboxes through a machine with GitHub publishing access. The relay retrieves only the fixed public contribution format. It never copies another machine's SQLite database, token, contexts or private model. A peer drops exported outbox entries after it observes their digests in the public bank. Direct peer connectivity is optional; each machine can pull the bank independently on any network and keep training offline.
 
 Runtime configuration lives under `.local/`. Host aliases, paths and credentials are not committed. SSH host-key checks remain enabled.
+
+The relay supports POSIX and Windows PowerShell peers. New peers are added without dropping old ones; failed peers do not block successful peers. Readers can use the public HTTPS bank from any network. Relaying still requires private SSH reachability, while direct publishing requires GitHub write access. [Per-OS setup and connectivity commands](SETUP.md#optional-shared-memory).

@@ -1,4 +1,5 @@
 import json
+import os
 
 import numpy as np
 import pytest
@@ -646,8 +647,9 @@ def test_sqlite_retention_restart_and_single_writer(tmp_path):
     assert store.db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 12
     assert store.db.execute("SELECT COUNT(*) FROM dedup").fetchone()[0] == 24
     assert store.contains("e-59") and not store.contains("e-0")
-    assert (tmp_path / "token").stat().st_mode & 0o777 == 0o600
-    assert (tmp_path / "organism.sqlite3").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":  # Windows uses the user profile ACL, not POSIX mode bits.
+        assert (tmp_path / "token").stat().st_mode & 0o777 == 0o600
+        assert (tmp_path / "organism.sqlite3").stat().st_mode & 0o777 == 0o600
     with pytest.raises(RuntimeError, match="running Terminus"):
         Store(tmp_path, now=99)
     snapshot = store.organism.dump()

@@ -11,9 +11,9 @@ Setup installs only this checkout's managed services and shortcuts. It refuses t
 
 ## Bring Back Terminus
 
-The desktop shortcut starts and enables the core, body and presence guardian, refreshes session information where needed, and verifies a fresh, exposed, connected native window. Healthy processes stay running. Explicit Quit/stop markers are cleared by a deliberate start or login restoration. The shortcut uses the approved artwork as its icon.
+The desktop shortcut starts and enables the core, body and presence guardian, refreshes session information where needed, and verifies a fresh, exposed, connected native window. Healthy processes stay running. Explicit Quit/stop markers are cleared by a deliberate start or login restoration. The Mac and Linux shortcuts use the approved artwork as their icon.
 
-The quiet guardian checks about every thirty seconds. It respects intentional pauses and verifies checkout ownership before changing a process. An active service alone is not proof of a visible creature: native heartbeat freshness, exposure, connection and process identity matter too. A whole-system failure still needs the operating system and graphical session to recover first.
+The quiet guardian checks about every thirty seconds on Linux/macOS and every minute on Windows. It respects intentional pauses and verifies checkout ownership before changing a process. An active service alone is not proof of a visible creature: native heartbeat freshness, exposure, connection and process identity matter too. A whole-system failure still needs the operating system and graphical session to recover first.
 
 ## Linux
 
@@ -37,6 +37,16 @@ Run setup while signed into the Mac desktop. It creates `org.terminus.core`, `or
 The same `scripts/servicectl.py` commands route to launchd. Logs are `.local/macos-core.log`, `.local/macos-desktop.log` and `.local/macos-presence.log`. The Cocoa panel is nonactivating and has no key/main-window eligibility; diagnostics report its actual focus state. Numerical-library thread pools are limited to one thread in the launch agents.
 
 The optional collective exchange adds `org.terminus.collective`, a ten-minute agent. It uses only the separate category model and contribution outbox and does not expose the local API to other computers.
+
+## Windows
+
+The installer registers `core`, `desktop` and `presence` under `\Terminus\` in Task Scheduler. Jobs use the current user's InteractiveToken, least privilege and no stored password. They run only in that user's signed-in desktop session. Starting a GUI directly from SSH would put it in Session 0; these tasks avoid that.
+
+The core and desktop jobs restart after failure. A separate one-minute guardian checks owned process creation times, core health and the desktop heartbeat. Stop requests are handled by the real asyncio or Qt event loop. If an owned process remains wedged, recovery verifies its creation time on the same OS handle before terminating it. Other applications and other checkouts are left alone. Explicit stops write pause markers and are respected across job retries.
+
+The window uses `WS_EX_NOACTIVATE`, a `WM_MOUSEACTIVATE` guard and pointer hit testing on its own window. It does not install keyboard hooks. The Windows observer polls pointer and window geometry only; typing and microphone observation are unavailable. Logs are `.local/windows-*.log`. Optional collective and source-update tasks run every ten minutes and hourly respectively.
+
+[Windows installation and troubleshooting](SETUP.md#windows-10-or-11)
 
 ## Graphics failure and a quieter fallback
 
@@ -89,3 +99,5 @@ The updater makes a consistent SQLite backup, pulls with `--ff-only`, rebuilds t
 `.local/desktop-status.json` reports native exposure, freshness, focus flags, graphics backend, real frame count, input shape and memory/cache diagnostics. `.local/desktop-presence.png` captures only the companion window. Offscreen smoke tests validate a raster/network path and do not establish hardware or native desktop success.
 
 Tests cover process ownership, pause markers, event-loop watchdog health, graphics failure latching, observer validation and bounded cleanup. A separate synthetic Xvfb test checks typing through touch, drag and menus on its own display. Runtime recovery checks must target only verified Terminus PIDs and confirm the original identity and learning counters afterward. No synthetic activity should be inserted into the resident creature to demonstrate recovery.
+
+Hourly source checks are opt-in through `scripts/update.py --enable-auto`. They skip dirty or diverged checkouts, preserve deliberate pauses and avoid restarts for bank-only commits. See [update setup](SETUP.md#updates-from-github).

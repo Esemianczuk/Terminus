@@ -12,10 +12,11 @@ import time
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from terminus import filelock
-from terminus.runtime import python_path,find_uv
+from terminus.runtime import python_path,find_uv,find_git
 
 
 def run(*args):
+    if args[0]=='git':args=(find_git(),*args[1:])
     return subprocess.run(list(map(str,args)),cwd=ROOT,check=True,text=True,capture_output=True,timeout=600)
 
 
@@ -90,12 +91,14 @@ def update(data,automatic=False):
     run('git','fetch','origin','main')
     old=run('git','rev-parse','HEAD').stdout.strip()
     target=run('git','rev-parse','origin/main').stdout.strip()
-    if old==target:
+    pending=data/'rebuild-pending.json'
+    retry=pending.exists() and json.loads(pending.read_text()).get('commit')==target
+    if old==target and not retry:
         write_status(data,state='current',commit=old);print('Already current.');return 0
-    ancestry=subprocess.run(['git','merge-base','--is-ancestor',old,target],cwd=ROOT,timeout=10)
+    ancestry=subprocess.run([find_git(),'merge-base','--is-ancestor',old,target],cwd=ROOT,timeout=10)
     if ancestry.returncode:return defer('Local main has diverged; no commits were discarded.')
     paths=run('git','diff','--name-only',old,target).stdout.splitlines()
-    if not needs_rebuild(paths):
+    if not retry and not needs_rebuild(paths):
         run('git','merge','--ff-only',target)
         write_status(data,state='updated-without-restart',commit=target)
         print('Updated bank/documentation. The creature stayed running.');return 0
@@ -113,11 +116,13 @@ def update(data,automatic=False):
     try:
         if installed:
             run(python,'scripts/servicectl.py','stop');stopped=True
+        pending.write_text(json.dumps({'commit':target})+'\n')
         run('git','merge','--ff-only',target)
         run(uv,'sync','--frozen','--extra','desktop')
         run(python,'scripts/servicectl.py','install')
         for role,value in paused.items():
             if value:run(python,'scripts/servicectl.py','stop','--part',role)
+        pending.unlink(missing_ok=True)
         write_status(data,state='updated',commit=target,previous=old)
         print('Updated and rebuilt. Local memory was preserved.');return 0
     except BaseException:

@@ -10,7 +10,7 @@ There is a little learning behind it. Repeated events become familiar. A small r
 
 ## Install
 
-Linux and macOS, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics, including ordinary integrated graphics: Metal on macOS and OpenGL on the tested Linux desktop. No model download or cloud inference account is needed. Windows desktop installation is not packaged yet.
+Windows 10/11, macOS and Linux are supported. You need Git, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). The native body uses Qt 6 hardware graphics: Direct3D 11 on Windows, Metal on macOS and OpenGL on the tested Linux desktop. No model download or cloud inference account is needed.
 
 ```sh
 git clone https://github.com/Esemianczuk/Terminus.git
@@ -18,7 +18,9 @@ cd Terminus
 uv run python scripts/setup.py
 ```
 
-The installer builds a local environment, starts his core and desktop body, sets up login startup and recovery, and adds **Bring Back Terminus** to your desktop. On macOS it is an app with his picture. On Linux it is a desktop launcher.
+On Windows, `py -m pip install --user uv` installs uv, and `py -m uv run python scripts/setup.py` works even when its executable is not on PATH.
+
+The installer builds a local environment, starts his core and desktop body, sets up login startup and recovery, and adds **Bring Back Terminus** to your desktop. Windows uses interactive Task Scheduler jobs, macOS uses launch agents, and Linux uses systemd user services. Each runs as your desktop user. [Setup instructions for each OS, updates and memory connectivity](docs/SETUP.md).
 
 To try him before installing services:
 
@@ -30,7 +32,7 @@ uv run python -m terminus serve
 uv run python desktop/overlay.py
 ```
 
-The desktop needs a logged-in graphical session. macOS uses launch agents; Linux uses systemd user services. X11 can notice window bounds, pointer movement and aggregate typing. On macOS, window and pointer metadata work without text access; typing rhythm is available only when Input Monitoring permission was already granted. An explicit menu command can request that permission; startup never prompts. Native Wayland awareness is not implemented. Linux can also notice that an audio application has a microphone stream open, without opening a microphone or recording audio.
+The desktop needs a logged-in graphical session. Windows observes pointer position and window geometry; typing rhythm and sampled background colors are not implemented there yet. X11 can notice window bounds, pointer movement and aggregate typing. On macOS, window and pointer metadata work without text access; typing rhythm is available only when Input Monitoring permission was already granted. An explicit menu command can request that permission; startup never prompts. Native Wayland awareness is not implemented. Linux can also notice that an audio application has a microphone stream open, without opening a microphone or recording audio.
 
 His body runs on Qt Quick's portable graphics layer. The artwork is packed with motion fields computed ahead of time, so adjacent poses can flow into each other while skin colors move independently. The same scene and shader assets give a future Android or iPhone version somewhere to start. There are no native mobile apps yet; other devices can use the browser habitat.
 
@@ -38,7 +40,7 @@ His body runs on Qt Quick's portable graphics layer. The artwork is packed with 
 
 Click to give him a nudge. Drag to carry him. Right-click for size, movement, facing and skin controls. Empty space around him lets clicks pass through to your other windows.
 
-The desktop window does not accept keyboard focus. Its optional observer runs in a separate process and reports small, bounded summaries. It notices aggregate typing rhythm, pointer movement and window geometry. It never reads typed characters, key identities, window titles, clipboard contents or audio. Turn **Notice windows and typing** off in the menu to stop that observation. Waking visits and little excursions have time limits and cooldowns, so a busy day still leaves room for naps.
+The desktop window does not accept keyboard focus. Its optional observer runs in a separate process and reports small, bounded summaries. Depending on the OS, it notices aggregate typing rhythm, pointer movement and window geometry. It never reads typed characters, key identities, window titles, clipboard contents or audio. Turn **Notice windows and typing** off in the menu to stop that observation. Waking visits and little excursions have time limits and cooldowns, so a busy day still leaves room for naps.
 
 **Living skin → Match colors behind me** is a separate, optional visual sensor. It samples the background beneath him and immediately reduces it to four colors. The colors ease into his camouflage, preserving the painted light, texture and eyes. On macOS this needs Screen Recording permission; **Allow screen colors...** opens the system request. X11 uses the compositor's existing window images and leaves input alone. These temporary pixels and colors are never saved, sent to the core, uploaded, or used for learning. Turning the option off discards them.
 
@@ -60,7 +62,7 @@ From its checkout:
 uv run python scripts/update.py
 ```
 
-This backs up the local memory database, pulls GitHub with `--ff-only`, rebuilds dependencies and restores the services. It refuses to discard local source changes. Each computer can update independently.
+This backs up the local memory database, pulls GitHub with `--ff-only`, rebuilds dependencies and restores the services. It refuses to discard local source changes. Each computer can update independently. To enable hourly checks, run `uv run python scripts/update.py --enable-auto`. `--status` shows the last result and `--disable-auto` turns them off. Bank-only and documentation-only updates do not restart him. Automatic source updates are off by default.
 
 For service status:
 
@@ -87,7 +89,9 @@ uv run python scripts/collective.py sync
 uv run python scripts/collective.py enable --publish
 ```
 
-Exchange runs about every ten minutes. A creature needs at least 32 category observations before it can export an update. GitHub serializes and validates bank updates. The resulting model supplies a small attention prior; it never replaces either creature's private memory or neural weights.
+Exchange runs about every ten minutes on all three operating systems. It is off until enabled. A creature needs at least 32 category observations before it can export an update. GitHub serializes and validates bank updates. The resulting model supplies a small attention prior; it never replaces either creature's private memory or neural weights.
+
+Several personal machines can use one authenticated publisher through an SSH relay, or publish independently over HTTPS. [Connection options and exact commands](docs/SETUP.md#optional-shared-memory). Each keeps its own identity and private learning.
 
 Anyone can inspect the [bank](community/bank.json), run a learner, or submit a contribution in a pull request. Reading the bank needs no GitHub login. Publishing needs an authorized account or a reviewed pull request. An offline creature keeps learning and waits until it can reconnect.
 

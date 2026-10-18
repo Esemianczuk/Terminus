@@ -729,7 +729,7 @@ def _worker_main(own_pid):
     except (ImportError, OSError, ValueError):
         pass
     try:
-        os.nice(10)
+        if hasattr(os,"nice"):os.nice(10)
     except OSError:
         pass
     observer = DesktopAwareness(own_pid=own_pid, _worker=True)
