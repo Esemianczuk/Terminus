@@ -378,7 +378,7 @@ STALE_AFTER = 4.
 CHILD_ENVIRONMENT = frozenset({"DISPLAY", "XAUTHORITY", "XAUTHLOCALHOSTNAME", "WAYLAND_DISPLAY",
                                "XDG_SESSION_TYPE", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
                                "PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "PULSE_SERVER",
-                               "PULSE_COOKIE", "__CF_USER_TEXT_ENCODING"})
+                               "PULSE_COOKIE", "__CF_USER_TEXT_ENCODING", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"})
 
 
 def _window_summary(windows, screen):
@@ -515,7 +515,10 @@ class DesktopAwareness:
                         from perception_macos import MacMetadataBackend
                     factory = MacMetadataBackend
                 elif self.platform == "win32":
-                    from desktop.perception_windows import WindowsMetadataBackend
+                    try:
+                        from desktop.perception_windows import WindowsMetadataBackend
+                    except ModuleNotFoundError:
+                        from perception_windows import WindowsMetadataBackend
                     factory = WindowsMetadataBackend
                 else:
                     factory = _XcbBackend

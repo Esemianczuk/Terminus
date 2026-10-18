@@ -79,7 +79,7 @@ class RenderGuard:
         record = {"schema": 1, "pid": self.pid, "time": now, "count": count}
         descriptor, temporary = tempfile.mkstemp(prefix=".render-guard-", suffix=".tmp", dir=self.path.parent)
         try:
-            os.fchmod(descriptor, 0o600)
+            if hasattr(os,"fchmod"):os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 descriptor = None
                 json.dump(record, stream, separators=(",", ":"), allow_nan=False)
