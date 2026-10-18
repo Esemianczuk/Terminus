@@ -362,7 +362,8 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
         # A same-origin page served directly from this machine can acquire its
         # ordinary session cookie without making the person handle a secret.
         # Both the TCP peer and Host must be loopback. A network-bound server,
-        # reverse proxy or cross-origin page must use explicit token pairing.
+        # forwarded request or cross-origin page must use token pairing. A
+        # trusted SSH tunnel also looks local to the core.
         peer = request.client.host if request.client else ""
         forwarded = any(request.headers.get(name) for name in
                         ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"))
