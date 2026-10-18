@@ -31,6 +31,10 @@ sample.composite.XCompositeRedirectWindow.argtypes=[C.c_void_p,C.c_ulong,C.c_int
 sample.composite.XCompositeRedirectWindow.restype=None
 sample.x.XChangeProperty.argtypes=[C.c_void_p,C.c_ulong,C.c_ulong,C.c_ulong,C.c_int,C.c_int,C.c_void_p,C.c_int]
 sample.x.XChangeProperty.restype=C.c_int
+sample.x.XCreateSimpleWindow.argtypes=[C.c_void_p,C.c_ulong,C.c_int,C.c_int,C.c_uint,C.c_uint,C.c_uint,C.c_ulong,C.c_ulong]
+sample.x.XCreateSimpleWindow.restype=C.c_ulong
+sample.x.XReparentWindow.argtypes=[C.c_void_p,C.c_ulong,C.c_ulong,C.c_int,C.c_int]
+sample.x.XMapWindow.argtypes=[C.c_void_p,C.c_ulong]
 
 
 def prop(window,name,values,type_name='CARDINAL'):
@@ -42,13 +46,19 @@ def prop(window,name,values,type_name='CARDINAL'):
 
 windows=[int(widget.winId()) for widget in (source,body,alert)]
 for index,(widget,window) in enumerate(zip((source,body,alert),windows)):
-    sample.composite.XCompositeRedirectWindow(sample.display,window,0)
+    if widget is not source:sample.composite.XCompositeRedirectWindow(sample.display,window,0)
     widget.show()
     prop(window,'WM_STATE',[1,0],'WM_STATE')
     prop(window,'_NET_WM_DESKTOP',[0xffffffff if widget is source else 0])
     prop(window,'_NET_WM_PID',[os.getpid() if widget is body else os.getpid()+index+1])
 prop(sample.root,'_NET_CLIENT_LIST_STACKING',windows,'WINDOW')
 prop(sample.root,'_NET_CURRENT_DESKTOP',[0])
+# Emulate a real reparenting compositor: only the decoration frame is
+# redirected, while EWMH lists the unredirected application child.
+frame=sample.x.XCreateSimpleWindow(sample.display,sample.root,100,100,400,400,0,0,0)
+sample.x.XReparentWindow(sample.display,windows[0],frame,0,0)
+sample.composite.XCompositeRedirectWindow(sample.display,frame,0)
+sample.x.XMapWindow(sample.display,frame)
 sample.x.XSync(sample.display,0)
 QtTest.QTest.qWait(150)
 latencies=[]

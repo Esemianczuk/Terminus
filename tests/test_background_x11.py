@@ -16,6 +16,7 @@ def setup(*, top_available=True, own_present=True):
              (10,'_NET_WM_DESKTOP'):[0],(11,'_NET_WM_DESKTOP'):[1],(13,'_NET_WM_DESKTOP'):[0]}
     instance.prop=lambda window,name:records.get((window,name),[])
     instance.geometry=lambda window:(0,0,500,500)
+    instance.frame_window=lambda window:window
     calls=[]
     instance.composite=SimpleNamespace(XCompositeNameWindowPixmap=lambda display,window:calls.append(('name',window)) or (window+100 if top_available else 0))
     instance.x=SimpleNamespace(XFreePixmap=lambda display,pixmap:calls.append(('free',pixmap)))

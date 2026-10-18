@@ -40,6 +40,7 @@ class X11Background:
         bind(self.x, "XGetWindowProperty", [p,u,u,C.c_long,C.c_long,i,u,C.POINTER(u),C.POINTER(i),C.POINTER(u),C.POINTER(u),C.POINTER(p)], i)
         bind(self.x, "XGetGeometry", [p,u,C.POINTER(u),C.POINTER(i),C.POINTER(i),C.POINTER(C.c_uint),C.POINTER(C.c_uint),C.POINTER(C.c_uint),C.POINTER(C.c_uint)], i)
         bind(self.x, "XTranslateCoordinates", [p,u,u,i,i,C.POINTER(i),C.POINTER(i),C.POINTER(u)], i)
+        bind(self.x, "XQueryTree", [p,u,C.POINTER(u),C.POINTER(u),C.POINTER(p),C.POINTER(C.c_uint)], i)
         bind(self.x, "XGetImage", [p,u,i,i,C.c_uint,C.c_uint,u,i], C.POINTER(Image))
         bind(self.x, "XGetPixel", [C.POINTER(Image),i,i], u)
         bind(self.x, "XDestroyImage", [C.POINTER(Image)], i)
@@ -99,6 +100,21 @@ class X11Background:
             return [round(value/64,5) for value in sums]
         finally: self.x.XDestroyImage(image)
 
+    def frame_window(self, window):
+        # A reparenting window manager redirects the decoration frame, not
+        # necessarily the application child in _NET_CLIENT_LIST_STACKING.
+        # Walk only that selected window's ancestors, stopping before root.
+        current=window
+        for _ in range(8):
+            root,parent,children,count=C.c_ulong(),C.c_ulong(),C.c_void_p(),C.c_uint()
+            ok=self.x.XQueryTree(self.display,current,C.byref(root),C.byref(parent),C.byref(children),C.byref(count))
+            if children:self.x.XFree(children)
+            if not ok:return None
+            if parent.value in (0,self.root):return current
+            if parent.value==current:return None
+            current=parent.value
+        return None
+
     def capture(self, rect, own_pid):
         stack=self.prop(self.root,"_NET_CLIENT_LIST_STACKING")
         owners={window:self.prop(window,"_NET_WM_PID") for window in stack}
@@ -114,8 +130,9 @@ class X11Background:
             if self.prop(window,"WM_STATE")[:1]!=[1]: continue
             desktop=self.prop(window,"_NET_WM_DESKTOP")[:1]
             if current_desktop and desktop and desktop not in (current_desktop,[0xffffffff]): continue
-            geometry=self.geometry(window)
-            if geometry: windows.append((window,geometry))
+            frame=self.frame_window(window)
+            geometry=self.geometry(frame or window)
+            if geometry: windows.append((frame,geometry))
         wallpaper=self.prop(self.root,"_XROOTPMAP_ID") or self.prop(self.root,"ESETROOT_PMAP_ID")
         root_geo=self.geometry(self.root)
         result=[]
@@ -124,7 +141,7 @@ class X11Background:
             color=None
             for window,(x,y,w,h) in windows:
                 if not x<=px<x+w or not y<=py<y+h: continue
-                pixmap=self.composite.XCompositeNameWindowPixmap(self.display,window)
+                pixmap=self.composite.XCompositeNameWindowPixmap(self.display,window) if window else 0
                 if pixmap:
                     try: color=self.color(pixmap,px-x,py-y,w,h)
                     finally: self.x.XFreePixmap(self.display,pixmap)
