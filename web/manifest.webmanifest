@@ -1,7 +1,7 @@
 {
   "name": "Terminus — One presence",
   "short_name": "Terminus",
-  "description": "One persistent creature. A shared habitat across your devices.",
+  "description": "One persistent creature, with a habitat on this computer.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

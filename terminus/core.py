@@ -145,6 +145,7 @@ class Organism:
             self.rng.bit_generator.state = saved["rng"]
             self.model = OnlineRNN(self.rng, saved["model"])
             self.data = deepcopy(saved["data"])
+            self.data.pop("collective_prior", None)
             self.data.setdefault("last_tick_at", self.data["server_time"])
             self._ensure_scaffold()
             self._ensure_ethology()
@@ -443,10 +444,6 @@ class Organism:
             score = (.02 + node["activation"] + associations.get(node["id"], 0.) * .6
                      + prediction * .8 + (self._novelty(node, now) * .08 if node["seen"] else 0.)
                      + node["familiarity"] * .04 - recent * .08)
-            # The public model sees event categories only. Its small prior
-            # supplements local attention without replacing private weights.
-            shared = self.data.get("collective_prior", {}).get("probabilities", {})
-            score += .10 * shared.get(node.get("last_kind", node["id"]), 0.)
             scored.append((node, max(.005, score)))
         return scored
 

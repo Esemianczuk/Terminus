@@ -40,13 +40,13 @@ Eight native tests cover click/native drag/graph drag separation, transparent in
 
 The resident captures its own widget after exposure and connection. [Native companion preview](screenshots/native-presence.png) shows that capture composited onto a neutral background; [transparent capture](screenshots/native-transparent.png) preserves the original alpha. This capture does not include other applications or the surrounding desktop. Neutral-background previews are rendering checks rather than full-desktop screenshots. Inactive transparent corners and the former permanent status area are outside its input region, so they pass clicks to applications underneath.
 
-The metadata collector's `--once` mode delivered real time/presence events and emptied its outbox. Tests cover private file permissions, expiry, 256-event retention, deduplication/replay and refusal to send a token over remote plain HTTP. Continuous app-focus or project monitoring was not enabled.
+The metadata collector's `--once` mode delivered real time/presence events and emptied its outbox. Tests cover private file permissions, expiry, 256-event retention and deduplication/replay. Continuous app-focus or project monitoring was not enabled.
 
 No existing GPU workload was stopped or reused. Kestrel and CocoIndex services remained untouched. No Stable Diffusion process was started. New art used the built-in Image Generation tool; originals in Downloads stayed unchanged.
 
 ## Current scope
 
-The core, authenticated multi-client protocol, responsive cached phone habitat, resident transparent native companion, learning/association policy and metadata collector are implemented. The refined native body has a continuous 40-patch texture mesh, gesture-driven graph contacts and registered rest/stretch/yawn art; it does not have a full anatomical skeletal rig. Remote HTTPS/tunnel configuration, physical phone installation, native phone telemetry, widgets and live wallpaper remain deployment/platform work. No claim of biological cognition, semantic screen understanding or long-term emergent personality is made.
+The local core, authenticated browser habitat, resident transparent native companion, learning/association policy and metadata collector are implemented. Each computer keeps an independent creature and private memory. The refined native body has a continuous 40-patch texture mesh, gesture-driven graph contacts and registered rest/stretch/yawn art; it does not have a full anatomical skeletal rig. Native phone installation, widgets and live wallpaper are not included. No claim of biological cognition, semantic screen understanding or long-term emergent personality is made.
 
 
 ## Behavior and animation review

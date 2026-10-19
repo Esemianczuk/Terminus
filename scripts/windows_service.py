@@ -12,7 +12,7 @@ sys.path.insert(0,str(ROOT))
 def main():
     from terminus.platform_windows import identity,guardian,bring_back
     role=sys.argv[1]
-    if role not in {'core','desktop','presence','collective','updates','recover'}: raise ValueError('Unknown task')
+    if role not in {'core','desktop','presence','updates','recover'}: raise ValueError('Unknown task')
     data=ROOT/'.local'; data.mkdir(exist_ok=True)
     # pythonw has no standard streams. Supply logs before uvicorn/Qt imports.
     path=data/('windows-'+role+'.log')
@@ -25,7 +25,7 @@ def main():
     os.environ['TERMINUS_SERVICE']=role
     print(f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] Starting {role}',flush=True)
     if role in {'core','desktop'}:
-        from terminus.collective import write_private
+        from terminus.runtime import write_private
         from terminus.supervision import is_paused
         if is_paused(role,data): return 0
         (data/('windows-'+role+'.stop')).unlink(missing_ok=True)
@@ -36,7 +36,7 @@ def main():
         import secrets
         import uvicorn
         from terminus.api import create_app
-        server=uvicorn.Server(uvicorn.Config(create_app(data,seed=secrets.randbits(63),loopback_browser_pairing=True),
+        server=uvicorn.Server(uvicorn.Config(create_app(data,seed=secrets.randbits(63)),
                                             host='127.0.0.1',port=8769,access_log=False,ws_max_size=8192))
         async def run():
             async def control():
@@ -53,9 +53,6 @@ def main():
                         '--capture-file',str(data/'desktop-presence.png')])
     elif role=='presence': guardian(ROOT)
     elif role=='recover': return bring_back(ROOT)
-    elif role=='collective':
-        from scripts.collective import main as collective
-        sys.argv=[sys.argv[0],'sync']; return collective()
     elif role=='updates':
         from scripts.update import main as update
         return update(['--automatic'])

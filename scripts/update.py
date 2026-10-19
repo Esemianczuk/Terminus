@@ -26,8 +26,7 @@ def write_status(data,**values):
 
 
 def needs_rebuild(paths):
-    # Shared-bank commits are frequent; advancing them must not interrupt him.
-    return any(not (p.startswith(('community/','docs/','.github/')) or p in {'README.md','LICENSE','.gitignore'}) for p in paths)
+    return any(not (p.startswith(('docs/','.github/')) or p in {'README.md','LICENSE','.gitignore'}) for p in paths)
 
 
 def schedule(enabled):
@@ -101,7 +100,7 @@ def update(data,automatic=False):
     if not retry and not needs_rebuild(paths):
         run('git','merge','--ff-only',target)
         write_status(data,state='updated-without-restart',commit=target)
-        print('Updated bank/documentation. The creature stayed running.');return 0
+        print('Updated documentation. The creature stayed running.');return 0
     database=data/'organism.sqlite3'
     if database.is_file():
         backups=data/'backups';backups.mkdir(exist_ok=True,mode=0o700)

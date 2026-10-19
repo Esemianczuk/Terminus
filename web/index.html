@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101c21">
-  <meta name="description" content="A small, persistent presence. One creature, shared across your windows and devices.">
+  <meta name="description" content="A small, persistent creature with a private life on this computer.">
   <title>Terminus — One presence</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -14,7 +14,7 @@
 <body>
   <div class="app" id="app">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Terminus home"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v10M20 25v10M5 20h10M25 20h10M9.4 9.4l7 7M23.6 23.6l7 7M30.6 9.4l-7 7M16.4 23.6l-7 7"/><circle cx="20" cy="20" r="4"/></svg><span>TERMINUS<small>One presence. Many windows.</small></span></a>
+      <a class="brand" href="/" aria-label="Terminus home"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v10M20 25v10M5 20h10M25 20h10M9.4 9.4l7 7M23.6 23.6l7 7M30.6 9.4l-7 7M16.4 23.6l-7 7"/><circle cx="20" cy="20" r="4"/></svg><span>TERMINUS<small>One creature on this computer.</small></span></a>
       <div class="toolbar">
         <div class="connection" id="connection" role="status"><i></i><span>Connecting</span></div>
         <span class="device-count" id="device-count" title="Devices seen recently">— devices</span>
@@ -43,7 +43,7 @@
       <section class="presence-card" aria-labelledby="presence-title">
         <div class="eyebrow"><i></i> HERE, WITH YOU</div>
         <h1 id="presence-title">A little presence.<br>A world of its own.</h1>
-        <p id="presence-copy">A shared habitat, shaped by the rhythm of your day.</p>
+        <p id="presence-copy">A local habitat, shaped by the rhythm of your day.</p>
         <div class="presence-meta"><span class="behavior-dot"></span><span id="behavior-label">Waiting for the habitat</span><span class="meta-divider"></span><span id="context-count">— contexts</span></div>
       </section>
       <div class="habitat-legend"><span class="legend-line"></span><span>Connections grow through experience</span></div>
@@ -71,8 +71,8 @@
       <p class="small-note" id="buffer-status">No waiting events.</p>
     </section>
 
-    <section class="pairing" id="pairing" aria-labelledby="pairing-title" hidden>
-      <div class="pairing-card"><div class="pairing-mark" aria-hidden="true">◈</div><div class="eyebrow">A WINDOW INTO THE SAME WORLD</div><h2 id="pairing-title">Come a little closer.</h2><p>Enter the pairing token from your Terminus server to join this habitat.</p><form id="pairing-form"><label for="pairing-token">Pairing token</label><input id="pairing-token" type="password" autocomplete="off" spellcheck="false" required><button class="primary-button" type="submit" id="pairing-submit">Open the habitat <span>↗</span></button><div class="pairing-file"><label for="pairing-file">Or pair from your local token file</label><input id="pairing-file" type="file" aria-label="Pair from token file"></div><p id="pairing-error" role="alert"></p></form><p class="small-note">The token stays out of your URL. Your connection uses a private session cookie.</p></div>
+    <section class="pairing" id="local-only" aria-labelledby="local-only-title" hidden>
+      <div class="pairing-card"><div class="pairing-mark" aria-hidden="true">◈</div><h2 id="local-only-title">Open Terminus on this computer.</h2><p>The habitat connects only to the core on this computer. Open <code>http://127.0.0.1:8769</code> here.</p><button class="primary-button" type="button" id="retry-local">Try again</button></div>
     </section>
     <div class="toast" id="toast" role="status"></div>
   </div>

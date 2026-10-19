@@ -6,7 +6,7 @@ Every visible behaviour should feel like evidence of an inner life.
 
 ## Source brief
 
-- [Codex Pet On Phone](https://chatgpt.com/share/6ad169b8-2fb8-83ea-b3b7-6c3b3c30609b): local authoritative core, associative graph, small sequence learner, stochastic history-dependent attention, symbolic utterances, device continuity, modular graph and direct interaction.
+- [Codex Pet On Phone](https://chatgpt.com/share/6ad169b8-2fb8-83ea-b3b7-6c3b3c30609b): local authoritative core, associative graph, small sequence learner, stochastic history-dependent attention, symbolic utterances, modular graph and direct interaction.
 - [Original Terminus build](https://chatgpt.com/share/6ad16a28-23c0-83ea-bf9b-d18c26b81236): sleepy miniature Cthulhu/cuttlefish sprawled over a graph, iridescence, tentacle gestures, understated anime influence, detailed bitmap texture.
 - Current direction: cute and cheeky, moderately androgynous leaning male. Smaller, less glossy irises; restrained blue-green lids; no eyelashes or swept eyeliner wings. Preserve warmth at close range and clarity at pet scale.
 
@@ -20,4 +20,4 @@ The vocabulary is a fictional ancient-looking conlang with stable internal seman
 
 The first implementation starts the recurrent predictor from seeded random weights. Incoming event transitions and sleep replay update its weights locally. This is online prediction of a limited event stream, not understanding, consciousness or a trained general model. Predictor tests verify learnability on controlled repeating sequences. Observational intrigue and long-term behavioural character require living with it; neither is established by those tests.
 
-The graph and stochastic behaviour policy are explicit software. Learned prediction error, familiarity, recency and internal state influence that policy. The animation expresses the result. Device clients share the same revision and identity; they do not train independent pets.
+The graph and stochastic behaviour policy are explicit software. Learned prediction error, familiarity, recency and internal state influence that policy. The animation expresses the result. Each installation keeps its own identity and learning history.

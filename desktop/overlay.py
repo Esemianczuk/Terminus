@@ -65,7 +65,7 @@ GLYPH_PATHS = (
 
 
 def validate_url(raw: str, *, explicit: bool) -> str:
-    """Only an explicit CLI URL may authorize a non-loopback destination."""
+    """Native body and core must run on the same computer."""
     parsed = urlsplit(raw)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("The core URL must be an http:// or https:// URL.")
@@ -81,8 +81,8 @@ def validate_url(raw: str, *, explicit: bool) -> str:
         loopback = ipaddress.ip_address(parsed.hostname).is_loopback
     except ValueError:
         loopback = parsed.hostname.lower() == "localhost"
-    if not loopback and not explicit:
-        raise ValueError("A remote core requires an explicit --url argument.")
+    if not loopback:
+        raise ValueError("The core URL must use this computer's loopback address.")
     return raw.rstrip("/")
 
 
@@ -2120,7 +2120,7 @@ class Overlay(QtWidgets.QWidget):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--renderer",choices=("auto","gpu","raster"),default="auto")
-    parser.add_argument("--url", default=None, help="Core origin; default http://127.0.0.1:8769")
+    parser.add_argument("--url", default=None, help="Local core origin; default http://127.0.0.1:8769")
     parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / ".local", help="Core data directory containing token")
     parser.add_argument("--scale", type=float, default=None, help="Overlay size multiplier, 0.65 to 2; default restores this body's setting")
     parser.add_argument("--no-roam", action="store_true", help="Keep the desktop companion where placed")

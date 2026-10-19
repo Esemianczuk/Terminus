@@ -140,6 +140,8 @@ def install(root=ROOT,config=None):
         raise ValueError('Run servicectl.py from the checkout being installed; legacy handoff must match that checkout.')
     if not (root/'.venv/bin/python').is_file() or not (data/'organism.sqlite3').is_file():
         raise ValueError('An existing Terminus runtime and memory database are required.')
+    from scripts.retire_sharing import retire
+    retire(root)
     config=Path(config) if config else Path(os.environ.get('XDG_CONFIG_HOME',str(Path.home()/'.config')))
     files={config/'systemd/user'/unit:unit_text(role,root) for role,unit in UNITS.items()}
     files.update({config/'systemd/user'/unit:text for unit,text in presence_units(root).items()})

@@ -23,8 +23,7 @@ jobs:
       - if: runner.os != 'Windows'
         run: uv run --frozen python -m pytest -q
       - if: runner.os == 'Windows'
-        run: uv run --frozen python -m pytest -q tests/test_windows_platform.py tests/test_core.py tests/test_api.py tests/test_collective.py tests/test_render_guard.py tests/test_animation.py tests/test_directional_motion.py tests/test_gaze.py tests/test_gaze_controller.py tests/test_gpu_models.py tests/test_graph_motion.py tests/test_skin.py
-      - run: uv run --frozen python scripts/collective_bank.py
+        run: uv run --frozen python -m pytest -q tests/test_windows_platform.py tests/test_core.py tests/test_api.py tests/test_render_guard.py tests/test_animation.py tests/test_directional_motion.py tests/test_gaze.py tests/test_gaze_controller.py tests/test_gpu_models.py tests/test_graph_motion.py tests/test_skin.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

@@ -22,7 +22,7 @@ He rests on a glowing graph, reaches toward nodes that draw his attention, and w
 
 A private recurrent model learns short patterns in categories of events; familiarity and connections in his graph help steer attention and behavior. His poses, temperament and gestures are carefully made, while the timing and choices can change with experience. He keeps his local history between runs. The learning is small and specific: he can develop familiar responses, but he does not read or understand my work.
 
-There is also an optional [public memory bank](#a-shared-memory-bank) so creatures on different machines can share a little of what they learn. Each machine reduces eligible events to seven fixed categories locally and contributes clipped numerical weight updates to a separate model. The public bank contains no words, key identities, window titles, files or event logs. Your own creature's detailed history stays on your computer. The bank does not offer a formal privacy guarantee; [the format and its limits](docs/COLLECTIVE_MEMORY.md) are open to inspect.
+Each installation develops its own habits and keeps its history on that computer. The model stays local.
 
 ## Install
 
@@ -36,7 +36,7 @@ uv run python scripts/setup.py
 
 On Windows, `py -m pip install --user uv` installs uv, and `py -m uv run python scripts/setup.py` works even when its executable is not on PATH.
 
-The installer builds a local environment, starts his core and desktop body, sets up login startup and recovery, and adds **Bring Back Terminus** to your desktop. Windows uses interactive Task Scheduler jobs, macOS uses launch agents, and Linux uses systemd user services. Each runs as your desktop user. [Setup instructions for each OS, updates and memory connectivity](docs/SETUP.md).
+The installer builds a local environment, starts his core and desktop body, sets up login startup and recovery, and adds **Bring Back Terminus** to your desktop. Windows uses interactive Task Scheduler jobs, macOS uses launch agents, and Linux uses systemd user services. Each runs as your desktop user. [Setup instructions for each OS and updates](docs/SETUP.md).
 
 To try him before installing services:
 
@@ -50,7 +50,7 @@ uv run python desktop/overlay.py
 
 The desktop needs a logged-in graphical session. Windows observes pointer position and window geometry; typing rhythm and sampled background colors are not implemented there yet. X11 can notice window bounds, pointer movement and aggregate typing. On macOS, window and pointer metadata work without text access; typing rhythm is available only when Input Monitoring permission was already granted. An explicit menu command can request that permission; startup never prompts. Native Wayland awareness is not implemented. Linux can also notice that an audio application has a microphone stream open, without opening a microphone or recording audio.
 
-His body runs on Qt Quick's portable graphics layer. The artwork is packed with motion fields computed ahead of time, so adjacent poses can flow into each other while skin colors move independently. The same scene and shader assets give a future Android or iPhone version somewhere to start. There are no native mobile apps yet; other devices can use the browser habitat.
+His body runs on Qt Quick's portable graphics layer. The artwork is packed with motion fields computed ahead of time, so adjacent poses can flow into each other while skin colors move independently. The same scene and shader assets give a future Android or iPhone version somewhere to start. There are no native mobile apps yet; the browser habitat runs only on the computer with the core.
 
 ## Living with him
 
@@ -78,7 +78,7 @@ From its checkout:
 uv run python scripts/update.py
 ```
 
-This backs up the local memory database, pulls GitHub with `--ff-only`, rebuilds dependencies and restores the services. It refuses to discard local source changes. Each computer can update independently. To enable hourly checks, run `uv run python scripts/update.py --enable-auto`. `--status` shows the last result and `--disable-auto` turns them off. Bank-only and documentation-only updates do not restart him. Automatic source updates are off by default.
+This backs up the local memory database, pulls GitHub with `--ff-only`, rebuilds dependencies and restores the services. It refuses to discard local source changes. Each computer can update independently. To enable hourly checks, run `uv run python scripts/update.py --enable-auto`. `--status` shows the last result and `--disable-auto` turns them off. Documentation-only updates do not restart him. Automatic source updates are off by default.
 
 For service status:
 
@@ -88,36 +88,11 @@ uv run python scripts/servicectl.py status
 
 [Startup, recovery and stopping](docs/SERVICE_RECOVERY.md)
 
-## A shared memory bank
-
-Each computer has its own creature, private model and history. There is also an optional public model that they can learn from together.
-
-Think of this as sharing learned tendencies. A small network adjusts numerical connections when categories of events recur in an order. Those connections are a black box that can influence what draws his attention and which reactions become familiar. The bank is not a diary of your desktop and does not contain a searchable collection of things people typed. It is also not an LLM or a claim that he understands what you are doing.
-
-That second model receives only seven fixed event categories: `context`, `poke`, `drag`, `presence`, `git`, `activity` and `time`. It never receives the context strings, typed characters, passwords, window titles, file contents, timestamps, geometry or event logs. Contributions contain small, clipped numerical changes to its 24-unit recurrent network.
-
-```sh
-# Pull the bank and learn locally, without uploading:
-uv run python scripts/collective.py enable
-uv run python scripts/collective.py sync
-
-# Allow publishing with a GitHub account that can write to this repo:
-uv run python scripts/collective.py enable --publish
-```
-
-Exchange runs about every ten minutes on all three operating systems. It is off until enabled. A creature needs at least 32 category observations before it can export an update. GitHub serializes and validates bank updates. The resulting model supplies a small attention prior; it never replaces either creature's private memory or neural weights.
-
-Several personal machines can use one authenticated publisher through an SSH relay, or publish independently over HTTPS. [Connection options and exact commands](docs/SETUP.md#optional-shared-memory). Each keeps its own identity and private learning.
-
-Anyone can inspect the [bank](community/bank.json), run a learner, or submit a contribution in a pull request. Reading the bank needs no GitHub login. Publishing needs an authorized account or a reviewed pull request. An offline creature keeps learning and waits until it can reconnect.
-
-This format leaves out content by construction. It is not a formal differential-privacy guarantee, and broad activity patterns can influence the shared weights. [Format, contribution process and limits](docs/COLLECTIVE_MEMORY.md)
-
 ## Browser habitat
 
 Open `http://127.0.0.1:8769` to see his wider graph, introduce a context or inspect learning. A browser on the same computer pairs automatically; there is no token to copy. The browser and desktop on one machine share that machine's core.
 
-The API defaults to loopback and still uses an authenticated session cookie. Automatic pairing requires a same-origin browser request through a loopback connection to a loopback address. A core bound to a network interface still requires the private `.local/token` file for browser pairing. An SSH tunnel to a loopback-bound core appears local and inherits the tunnel's access, so only trusted users should be allowed to open one. Public collective learning does not expose the local API. Sharing one core with a remote browser is a separate, deliberate setup through a private HTTPS endpoint.
+The core listens only on `127.0.0.1`. The browser and desktop body on that computer use the same local core. The browser receives a signed session cookie through a same-origin loopback request. Network clients cannot pair through Terminus. The local API is not an inter-computer connection.
 
 ## What he learns
 

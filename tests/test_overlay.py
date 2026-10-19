@@ -46,12 +46,11 @@ class OverlayTests(unittest.TestCase):
                 "edges": [{"source": "self", "target": "work", "weight": .8},
                           {"source": "self", "target": "touch", "weight": .3}]}
 
-    def test_destinations_require_explicit_remote_url_and_refuse_url_secrets(self):
+    def test_destinations_are_local_and_refuse_url_secrets(self):
         self.assertEqual(OVERLAY.validate_url("http://127.0.0.1:8769/", explicit=False), "http://127.0.0.1:8769")
-        self.assertEqual(OVERLAY.validate_url("https://example.invalid", explicit=True), "https://example.invalid")
-        for url in ["http://example.invalid", "file:///tmp/token", "http://name:secret@localhost:8769", "http://localhost:8769/?token=secret", "http://localhost:8769/#secret"]:
+        for url in ["http://example.invalid", "https://example.invalid", "file:///tmp/token", "http://name:secret@localhost:8769", "http://localhost:8769/?token=secret", "http://localhost:8769/#secret"]:
             with self.subTest(url=url), self.assertRaises(ValueError):
-                OVERLAY.validate_url(url, explicit=False)
+                OVERLAY.validate_url(url, explicit=True)
 
     def test_invalid_network_coordinates_are_rejected(self):
         state = {"revision": 1, "behavior": "idle", "position": {"x": float("nan"), "y": 0.5}, "nodes": [], "edges": []}

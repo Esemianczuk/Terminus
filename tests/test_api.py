@@ -26,17 +26,16 @@ def bearer(app):
     return {"Authorization": "Bearer " + app.state.service.store.token}
 
 
-def test_pair_auth_cookie_origin_and_input_boundaries(tmp_path):
+def test_local_auth_cookie_origin_and_input_boundaries(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         assert client.get("/api/health").json()["status"] == "ok"
         assert client.get("/api/state").status_code == 401
-        assert client.post("/api/pair", json={"token": "invalid"}).status_code == 401
-        assert client.post("/api/pair", json={"token": "💙"}).status_code == 401
-        secret = app.state.service.store.token
-        assert client.post("/api/pair", json={"token": secret}, headers={"origin": "http://evil.invalid"}).status_code == 403
-        assert client.post("/api/pair", json={"token": secret}, headers={"origin": "http://host:broken"}).status_code == 403
-        response = client.post("/api/pair", json={"token": secret}, headers=ORIGIN)
+        assert client.post("/api/pair").status_code == 405  # No API route; static files reject POST.
+        assert client.post("/api/pair-local").status_code == 403
+        assert client.post("/api/pair-local", headers={"origin": "http://evil.invalid"}).status_code == 403
+        assert client.post("/api/pair-local", headers={"origin": "http://host:broken"}).status_code == 403
+        response = client.post("/api/pair-local", headers=ORIGIN)
         assert response.status_code == 200
         assert "HttpOnly" in response.headers["set-cookie"]
         assert "SameSite=strict" in response.headers["set-cookie"]
@@ -51,7 +50,7 @@ def test_pair_auth_cookie_origin_and_input_boundaries(tmp_path):
 
 
 def test_loopback_browser_pairs_automatically_but_remote_and_cross_origin_do_not(tmp_path):
-    app = create_app(tmp_path, tick_interval=0, loopback_browser_pairing=True)
+    app = create_app(tmp_path, tick_interval=0)
     with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         assert client.get("/api/state").status_code == 401
         assert client.post("/api/pair-local").status_code == 403
@@ -66,18 +65,17 @@ def test_loopback_browser_pairs_automatically_but_remote_and_cross_origin_do_not
         assert client.post("/api/events", json=payload(), headers=ORIGIN).status_code == 200
     with TestClient(app, base_url=BASE_URL, client=("192.0.2.10", 50000)) as remote:
         assert remote.post("/api/pair-local", headers=ORIGIN).status_code == 403
-        assert remote.get("/api/state").status_code == 401
+        assert remote.get("/api/state").status_code == 403
+        assert remote.get("/").status_code == 403
     with TestClient(app, base_url="http://evil.invalid:8769", client=("127.0.0.1", 50000)) as rebound:
         assert rebound.post("/api/pair-local", headers={"origin": "http://evil.invalid:8769"}).status_code == 403
-    manual_only = create_app(tmp_path, tick_interval=0)
-    with TestClient(manual_only, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
-        assert client.post("/api/pair-local", headers=ORIGIN).status_code == 403
+        assert rebound.get("/").status_code == 403
 
 
 def test_two_websockets_receive_the_same_persisted_revision(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
-        client.post("/api/pair", json={"token": app.state.service.store.token}, headers=ORIGIN)
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
+        client.post("/api/pair-local", headers=ORIGIN)
         with client.websocket_connect(WS_URL, headers=ORIGIN) as first:
             with client.websocket_connect(WS_URL, headers=ORIGIN) as second:
                 assert first.receive_json() == second.receive_json()
@@ -95,11 +93,11 @@ def test_two_websockets_receive_the_same_persisted_revision(tmp_path):
 
 def test_websocket_requires_auth_and_same_origin(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(WS_URL, headers=ORIGIN):
                 pass
-        client.post("/api/pair", json={"token": app.state.service.store.token}, headers=ORIGIN)
+        client.post("/api/pair-local", headers=ORIGIN)
         for headers in ({}, {"origin": "http://evil.invalid"}):
             with pytest.raises(WebSocketDisconnect):
                 with client.websocket_connect(WS_URL, headers=headers):
@@ -109,20 +107,20 @@ def test_websocket_requires_auth_and_same_origin(tmp_path):
 def test_restart_retains_state_cookie_and_dedup(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
     event = payload()
-    with TestClient(app, base_url=BASE_URL) as client:
-        client.post("/api/pair", json={"token": app.state.service.store.token}, headers=ORIGIN)
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
+        client.post("/api/pair-local", headers=ORIGIN)
         client.post("/api/events", json=event, headers=ORIGIN)
         state = client.get("/api/state").json()
         cookies = dict(client.cookies)
     restart = create_app(tmp_path, tick_interval=0)
-    with TestClient(restart, base_url=BASE_URL, cookies=cookies) as client:
+    with TestClient(restart, base_url=BASE_URL, client=("127.0.0.1", 50000), cookies=cookies) as client:
         assert client.get("/api/state").json() == state
         assert client.post("/api/events", json=event, headers=ORIGIN).json()["accepted"] is False
 
 
 def test_rate_limiter_preserves_duplicate_idempotency(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         headers = bearer(app)
         first = payload()
         assert client.post("/api/events", json=first, headers=headers).status_code == 200
@@ -134,7 +132,7 @@ def test_rate_limiter_preserves_duplicate_idempotency(tmp_path):
 
 def test_failed_transaction_restores_entire_model_replay_and_database(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL, raise_server_exceptions=False) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000), raise_server_exceptions=False) as client:
         headers = bearer(app)
         for _ in range(2):
             assert client.post("/api/events", json=payload(), headers=headers).status_code == 200
@@ -160,7 +158,7 @@ def test_failed_transaction_restores_entire_model_replay_and_database(tmp_path):
 def test_idle_checkpoints_are_bounded_and_events_and_clean_stop_are_durable(tmp_path):
     now = [1000.0]
     app = create_app(tmp_path, tick_interval=0, checkpoint_interval=15, clock=lambda: now[0])
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         writes_before = service.store.db.total_changes
         for _ in range(60):
@@ -195,7 +193,7 @@ def test_idle_checkpoints_are_bounded_and_events_and_clean_stop_are_durable(tmp_
 def test_checkpoint_failure_retains_life_retries_and_reports_recovery(tmp_path, monkeypatch, caplog):
     now = [1000.0]
     app = create_app(tmp_path, tick_interval=0, checkpoint_interval=15, clock=lambda: now[0])
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         original_save = service.store.save
         attempts = []
@@ -286,7 +284,7 @@ def test_actual_ticker_survives_tick_failure_and_restores_coherent_state(tmp_pat
 def test_health_detects_stalled_or_stopped_ticker_but_allows_manual_services(tmp_path):
     now = [1000.0]
     app = create_app(tmp_path, tick_interval=0, clock=lambda: now[0])
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         now[0] += 60
         assert client.get("/api/health").status_code == 200
@@ -305,7 +303,7 @@ def test_health_detects_stalled_or_stopped_ticker_but_allows_manual_services(tmp
 def test_event_timestamps_preserve_observation_and_receipt_with_skew_bounds(tmp_path):
     now = 100000.0
     app = create_app(tmp_path, tick_interval=0, clock=lambda: now)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         headers = bearer(app)
         historical = payload(kind="presence", source="live", timestamp=now - 3600)
         assert client.post("/api/events", json=historical, headers=headers).status_code == 200
@@ -370,7 +368,7 @@ def test_persisted_future_clock_is_degraded_without_fake_ticks_and_recovers(tmp_
     store.close()
     now = [900.0]
     app = create_app(tmp_path, tick_interval=0, clock=lambda: now[0])
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         service.tick_interval = 1
         for timestamp in range(900, 904):
@@ -401,6 +399,7 @@ class InitialSnapshotSocket:
         self.headers = {"authorization": "Bearer " + token, "origin": BASE_URL, "host": "127.0.0.1:8769"}
         self.cookies = {}
         self.url = urlsplit(WS_URL)
+        self.client = type('Peer', (), {'host': '127.0.0.1'})()
         self.failure = failure
         self.accepted = False
         self.snapshots = []
@@ -428,7 +427,7 @@ class InitialSnapshotSocket:
 @pytest.mark.parametrize("failure", ["raise", "block"])
 def test_failed_initial_websocket_snapshot_releases_client_and_lock(tmp_path, failure):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         endpoint = next(route.endpoint for route in app.routes if getattr(route, "path", None) == "/ws")
         socket = InitialSnapshotSocket(service.store.token, failure=failure)
@@ -447,7 +446,7 @@ def test_failed_initial_websocket_snapshot_releases_client_and_lock(tmp_path, fa
 
 def test_cancelled_initial_websocket_snapshot_releases_client_and_lock(tmp_path):
     app = create_app(tmp_path, tick_interval=0)
-    with TestClient(app, base_url=BASE_URL) as client:
+    with TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)) as client:
         service = app.state.service
         endpoint = next(route.endpoint for route in app.routes if getattr(route, "path", None) == "/ws")
 

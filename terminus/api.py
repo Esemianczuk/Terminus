@@ -1,8 +1,8 @@
 """Authenticated HTTP/WebSocket habitat; all clients share one serialized core.
 
-Loopback-bound browsers pair automatically through POST /api/pair-local. Other
-browsers use POST /api/pair with the private token. Both receive a signed
-HttpOnly SameSite cookie; command-line clients can send Authorization: Bearer.
+Loopback-bound browsers pair automatically through POST /api/pair-local and
+receive a signed HttpOnly SameSite cookie. Local native clients use a private
+bearer token. The service rejects non-loopback peers and host names.
 Cookie mutations and WebSockets require the same origin.
 The event history retains 512 entries and idempotency covers the last 4096 ids.
 """
@@ -60,11 +60,6 @@ class Event(BaseModel):
         return value
 
 
-class Pair(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    token: str = Field(min_length=1, max_length=200)
-
-
 def loopback_host(host):
     if host == "localhost":
         return True
@@ -108,7 +103,6 @@ class Service:
         self.persistence_failures = 0
         self.log_after = {}
         self.ticker_task = None
-        self.next_collective_read = 0.
         self.lock = asyncio.Lock()
         self.clients = set()
         self.buckets = defaultdict(deque)
@@ -171,24 +165,6 @@ class Service:
         from .core import Organism
         async with self.lock:
             now = self.clock()
-            if now >= self.next_collective_read:
-                self.next_collective_read = now + 10
-                try:
-                    import json
-                    path = self.store.directory / "collective-prior.json"
-                    if path.stat().st_size > 4096:
-                        raise ValueError("Oversized collective prior")
-                    prior = json.loads(path.read_text())
-                    from .collective import KINDS
-                    probabilities = prior["probabilities"]
-                    if (prior.get("schema") != 1 or set(probabilities) != set(KINDS)
-                            or any(not isinstance(v,(int,float)) or isinstance(v,bool) or not math.isfinite(v)
-                                   or not 0 <= v <= 1 for v in probabilities.values())
-                            or not .99 <= sum(probabilities.values()) <= 1.01):
-                        raise ValueError("Invalid collective prior")
-                    self.store.organism.data["collective_prior"] = prior
-                except (OSError,ValueError,KeyError,TypeError,AttributeError):
-                    pass
             if now < max(self.store.organism.data["last_tick_at"], self.store.organism.data["server_time"]):
                 # The core refuses backward time. Publish that blocked state
                 # without claiming a successful tick or rewriting its history.
@@ -237,7 +213,7 @@ class Service:
     def require(self, request, mutation=False):
         method = self.authorized(request)
         if not method:
-            raise HTTPException(401, "Pair this device using the private local token")
+            raise HTTPException(401, "Authenticate with the local core")
         if mutation and ((request.headers.get("origin") and not same_origin(request)) or
                          (method == "cookie" and not same_origin(request))):
             raise HTTPException(403, "A same-origin request is required")
@@ -284,7 +260,7 @@ class Service:
 
 
 def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_interval=15.0,
-               clock=time.time, web_dir=None, loopback_browser_pairing=False):
+               clock=time.time, web_dir=None):
     """Build an application without starting a second organism until lifespan."""
     if not math.isfinite(checkpoint_interval) or checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive and finite")
@@ -320,6 +296,9 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
 
     @app.middleware("http")
     async def boundaries(request: Request, call_next):
+        if not (request.client and loopback_host(request.client.host)
+                and loopback_host(request.url.hostname or "")):
+            return Response("Local connections only", status_code=403)
         length = request.headers.get("content-length")
         if length and (not length.isdigit() or int(length) > 8192):
             return Response("Request too large", status_code=413)
@@ -345,29 +324,16 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
             response.status_code = 503
         return {"status": diagnostics["status"], "service": "terminus", "version": __version__, "runtime": diagnostics}
 
-    @app.post("/api/pair")
-    async def pair(body: Pair, request: Request, response: Response):
-        service = app.state.service
-        service.rate("pair:" + (request.client.host if request.client else "local"), 15)
-        if request.headers.get("origin") and not same_origin(request):
-            raise HTTPException(403, "A same-origin request is required")
-        if not hmac.compare_digest(body.token.encode(), service.store.token.encode()):
-            raise HTTPException(401, "Pairing token does not match")
-        response.set_cookie(COOKIE, service.sign_session(), max_age=SESSION_SECONDS,
-                            httponly=True, secure=request.url.scheme == "https", samesite="strict", path="/")
-        return {"paired": True, "organism_id": service.store.organism.data["organism_id"]}
-
     @app.post("/api/pair-local")
     async def pair_local(request: Request, response: Response):
         # A same-origin page served directly from this machine can acquire its
         # ordinary session cookie without making the person handle a secret.
-        # Both the TCP peer and Host must be loopback. A network-bound server,
-        # forwarded request or cross-origin page must use token pairing. A
-        # trusted SSH tunnel also looks local to the core.
+        # Both the TCP peer and Host must be loopback. A forwarded or
+        # cross-origin request cannot acquire a browser session.
         peer = request.client.host if request.client else ""
         forwarded = any(request.headers.get(name) for name in
                         ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"))
-        if not (loopback_browser_pairing and loopback_host(peer) and not forwarded
+        if not (loopback_host(peer) and not forwarded
                 and loopback_host(request.url.hostname or "") and same_origin(request)):
             raise HTTPException(403, "Local browser pairing is unavailable")
         service = app.state.service
@@ -430,7 +396,9 @@ def create_app(data_dir=".local", *, seed=814, tick_interval=1.0, checkpoint_int
     @app.websocket("/ws")
     async def websocket(socket: WebSocket):
         service = app.state.service
-        if not service.authorized(socket) or not same_origin(socket):
+        if not (socket.client and loopback_host(socket.client.host)
+                and loopback_host(socket.url.hostname or "")
+                and service.authorized(socket) and same_origin(socket)):
             await socket.close(code=1008)
             return
         await socket.accept()

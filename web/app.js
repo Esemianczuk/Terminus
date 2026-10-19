@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const ui = {
   habitat: $('#habitat'), field: $('#field'), nodes: $('#nodes'), creature: $('#creature'), body: $('#creature-body'), sprite: $('#sprite'),
-  connection: $('#connection'), note: $('#field-note span'), utterance: $('#utterance'), drawer: $('#observatory'), settings: $('#settings'), pairing: $('#pairing'),
+  connection: $('#connection'), note: $('#field-note span'), utterance: $('#utterance'), drawer: $('#observatory'), settings: $('#settings'), localAccess: $('#local-only'),
 };
 
 // A fixed visual alphabet. The server owns glyph sequences; this client only draws them.
@@ -55,7 +55,7 @@ let connected = false;
 let authenticated = false;
 // A saved, formerly authenticated view may queue explicit actions while auth is
 // unknown. Only a fresh server response can authorize replay or mark us online.
-let pairingRequired = safeRead('terminus.pairing-required', false) === true;
+let localAccessRequired = false;
 let socket = null;
 let retryTimer = null;
 let retryCount = 0;
@@ -100,11 +100,11 @@ function setConnection(mode, text) {
   document.body.classList.toggle('saved-view',!connected);
   ui.connection.dataset.mode = mode;
   ui.connection.querySelector('span').textContent = text;
-  ui.creature.dataset.disabled = String(!state || pairingRequired);
+  ui.creature.dataset.disabled = String(!state || localAccessRequired);
   if (mode !== 'online') {
     clearTimeout(utteranceTimer);
     ui.utterance.classList.remove('visible');
-    ui.note.textContent = state ? `Snapshot · ${new Date(snapshotTime || Date.now()).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · waiting to reconnect` : navigator.onLine ? 'Waiting for the shared habitat' : 'Offline · no saved habitat yet';
+    ui.note.textContent = state ? `Snapshot · ${new Date(snapshotTime || Date.now()).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · waiting to reconnect` : navigator.onLine ? 'Waiting for the local habitat' : 'Offline · no saved habitat yet';
     $('#sync-detail').textContent = state ? 'Saved view · server state has not changed here' : 'Connecting to the organism';
   }
   updateBufferLabel();
@@ -112,7 +112,7 @@ function setConnection(mode, text) {
 function updateBufferLabel() {
   const count = eventBuffer().length;
   $('#buffer-status').textContent = count ? `${count} explicit ${count === 1 ? 'event is' : 'events are'} waiting. Expires after 30 minutes.` : 'No waiting events.';
-  $('#context-help').textContent = pairingRequired || !state ? 'Pair this window to offer a context.' : connected ? 'A real event, offered by you.' : 'Saved view: explicit events wait for live authentication.';
+  $('#context-help').textContent = localAccessRequired || !state ? 'Connect to the local core to offer a context.' : connected ? 'A real event, offered by you.' : 'Saved view: explicit events wait for live authentication.';
 }
 function epoch(value) {
   if (typeof value === 'number') return value < 1e12 ? value * 1000 : value;
@@ -135,16 +135,15 @@ function applyState(incoming, fromCache = false) {
   snapshotTime = fromCache ? snapshotTime : Date.now();
   if (!fromCache) {
     authenticated = true;
-    pairingRequired = false;
-    safeWrite('terminus.pairing-required',false);
+    localAccessRequired = false;
     lastFrameAt = Date.now();
     const time = epoch(state.server_time);
     if (time) serverOffset = time - Date.now();
     safeWrite('terminus.snapshot.v1', { state, receivedAt: snapshotTime });
     const runtime = state.runtime || {};
     setConnection('online', runtime.status === 'degraded' ? (runtime.last_tick_error || runtime.clock_error ? 'Core recovering' : 'Storage retrying') : 'In sync');
-    ui.pairing.hidden = true;
-    ui.note.textContent = runtime.status === 'degraded' ? 'The core is recovering · see the inspector' : 'One organism · one shared state';
+    ui.localAccess.hidden = true;
+    ui.note.textContent = runtime.status === 'degraded' ? 'The core is recovering · see the inspector' : 'One organism · one local state';
     $('#sync-detail').textContent = preferences.inspector ? `Synced · revision ${state.revision ?? '—'}` : 'Your windows share one state';
   }
   ui.creature.dataset.behavior = String(state.behavior || 'idle');
@@ -302,11 +301,10 @@ async function bootstrap() {
       const localPair = await fetch('/api/pair-local', {method:'POST',signal:AbortSignal.timeout(8000)});
       if (generation !== bootstrapGeneration || !navigator.onLine) return;
       if (localPair.ok) response = await fetch('/api/state', {cache:'no-store',signal:AbortSignal.timeout(8000)});
-      else if (localPair.status !== 403 && localPair.status !== 404) throw new Error(`Local pairing returned ${localPair.status}`);
+      else if (localPair.status !== 403 && localPair.status !== 404) throw new Error(`Local session returned ${localPair.status}`);
       if (generation !== bootstrapGeneration || !navigator.onLine) return;
       if (response.status === 401) {
-        requirePairing();
-        $('#pairing-token').focus();
+        requireLocalAccess();
         return;
       }
     }
@@ -328,7 +326,7 @@ function connectSocket() {
   socket = new WebSocket(`${protocol}//${location.host}/ws`);
   const current = socket;
   current.addEventListener('message', event => {
-    if (socket !== current || !navigator.onLine || pairingRequired) return;
+    if (socket !== current || !navigator.onLine || localAccessRequired) return;
     try { applyState(JSON.parse(event.data)); retryCount = 0; } catch { /* Ignore malformed frames. */ }
   });
   current.addEventListener('close', () => {
@@ -339,17 +337,16 @@ function connectSocket() {
   });
   current.addEventListener('error', () => current.close());
 }
-function requirePairing() {
+function requireLocalAccess() {
   ++bootstrapGeneration;
   authenticated = false;
-  pairingRequired = true;
-  safeWrite('terminus.pairing-required',true);
+  localAccessRequired = true;
   const oldSocket = socket;
   socket = null;
   oldSocket?.close();
   clearTimeout(retryTimer);
-  setConnection('waiting','Pair this window');
-  ui.pairing.hidden = false;
+  setConnection('waiting','Local access only');
+  ui.localAccess.hidden = false;
 }
 function scheduleReconnect() {
   clearTimeout(retryTimer);
@@ -375,12 +372,12 @@ function bufferEvent(event) {
   buffered.push({...event,organismId:state?.organism_id,queuedAt:Date.now()});
   writeBuffer(buffered);
   updateBufferLabel();
-  toast(bufferStorageFailed ? 'Kept in this window for reconnect. Keep this window open until delivered.' : 'Saved for reconnect. The shared organism has not changed yet.');
+  toast(bufferStorageFailed ? 'Kept in this window for reconnect. Keep this window open until delivered.' : 'Saved for reconnect. The local organism has not changed yet.');
   return true;
 }
 async function offerEvent(kind, context, extra = {}) {
   const event = {id:uuid(),kind,device_id:deviceId,context:String(context || '').slice(0,80),intensity:kind === 'poke' ? .45 : .35,source:'manual',timestamp:Date.now()/1000,...extra};
-  if (pairingRequired || !state) { toast('Pair this window before offering an event.'); if(navigator.onLine) ui.pairing.hidden = false; return false; }
+  if (localAccessRequired || !state) { toast('Connect to the local core before offering an event.'); if(navigator.onLine) ui.localAccess.hidden = false; return false; }
   if (!authenticated || !connected || !navigator.onLine) return bufferEvent(event);
   try {
     const result = await postEvent(event);
@@ -391,7 +388,7 @@ async function offerEvent(kind, context, extra = {}) {
     }
     return true;
   } catch (error) {
-    if (error.status === 401) { requirePairing(); toast('Pair this window again to continue.'); return false; }
+    if (error.status === 401) { requireLocalAccess(); toast('Reconnect to the local core to continue.'); return false; }
     if (error.status && error.status < 500 && error.status !== 429) { toast('The server could not accept that event.'); return false; }
     setConnection('waiting','Reconnecting · saved view');
     scheduleReconnect();
@@ -399,7 +396,7 @@ async function offerEvent(kind, context, extra = {}) {
   }
 }
 async function flushEvents() {
-  if (flushing || pairingRequired || !connected || !authenticated || !navigator.onLine || Date.now() < replayAfter) return;
+  if (flushing || localAccessRequired || !connected || !authenticated || !navigator.onLine || Date.now() < replayAfter) return;
   const queue = eventBuffer();
   if (!queue.length) return;
   flushing = true;
@@ -418,7 +415,7 @@ async function flushEvents() {
         writeBuffer(eventBuffer().filter(pending => pending.id !== item.id));
         delivered++;
       } catch (error) {
-        if (error.status === 401) { requirePairing(); break; }
+        if (error.status === 401) { requireLocalAccess(); break; }
         if ([400,403,422].includes(error.status)) writeBuffer(eventBuffer().filter(pending => pending.id !== item.id));
         else { replayAfter = Date.now() + (error.status === 429 ? 65000 : 5000); break; }
       }
@@ -451,7 +448,7 @@ function applyPreferences() {
   $('#motion-toggle').checked = reducedMotion;
   $('#inspector-toggle').checked = !!preferences.inspector;
   renderInspector();
-  if(state) $('#sync-detail').textContent = preferences.inspector && connected ? `Synced · revision ${state.revision ?? '—'}` : connected ? 'Your windows share one state' : 'Saved view · server state has not changed here';
+  if(state) $('#sync-detail').textContent = preferences.inspector && connected ? `Synced · revision ${state.revision ?? '—'}` : connected ? 'Your local windows show one state' : 'Saved view · server state has not changed here';
   safeWrite('terminus.preferences',preferences);
 }
 $('#observatory-button').addEventListener('click',() => ui.drawer.classList.contains('open') ? closeDrawer() : openDrawer());
@@ -474,37 +471,10 @@ $('#context-form').addEventListener('submit',async event => {
   if (await offerEvent('context',context)) input.value = '';
   button.disabled = false;
 });
-async function pairWithToken(token) {
-  if (!token) return;
-  $('#pairing-submit').disabled = true;
-  $('#pairing-error').textContent = '';
-  try {
-    const response = await fetch('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token}),signal:AbortSignal.timeout(8000)});
-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'That token did not open this habitat. Check the token on your server.' : 'The server could not pair this window. Try again in a moment.');
-    $('#pairing-token').value = '';
-    authenticated = true;
-    pairingRequired = false;
-    safeWrite('terminus.pairing-required',false);
-    ui.pairing.hidden = true;
-    await bootstrap();
-  } catch (error) { $('#pairing-error').textContent = error.name === 'TypeError' || error.name === 'TimeoutError' ? 'Cannot reach the habitat. Check your connection and server.' : error.message; }
-  finally { $('#pairing-submit').disabled = false; }
-}
-$('#pairing-form').addEventListener('submit',async event => {
-  event.preventDefault();
-  await pairWithToken($('#pairing-token').value.trim());
-});
-$('#pairing-file').addEventListener('change',async event => {
-  const file = event.target.files?.[0];
-  event.target.value = '';
-  if (!file) return;
-  if (file.size > 4096) { $('#pairing-error').textContent = 'Choose the small token text file from your server.'; return; }
-  try { await pairWithToken((await file.text()).trim()); }
-  catch { $('#pairing-error').textContent = 'Could not read that token file.'; }
-});
+$('#retry-local').addEventListener('click',bootstrap);
 
 ui.creature.addEventListener('pointerdown',event => {
-  if (!state || pairingRequired || event.button !== 0 || dragging) return;
+  if (!state || localAccessRequired || event.button !== 0 || dragging) return;
   dragging = {id:event.pointerId,startX:event.clientX,startY:event.clientY,startPosition:{...state.position},active:false};
   ui.creature.setPointerCapture(event.pointerId);
 });
@@ -535,7 +505,7 @@ ui.creature.addEventListener('pointercancel',event => releasePointer(event,true)
 ui.creature.addEventListener('lostpointercapture',event => { if(dragging?.id === event.pointerId) releasePointer(event,true); });
 ui.creature.addEventListener('keydown',event => {
   if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); offerEvent('poke','A gentle hello'); }
-  if (!state || pairingRequired || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
+  if (!state || localAccessRequired || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
   event.preventDefault();
   const position = {...state.position};
   position.x = clamp(position.x + (event.key === 'ArrowLeft' ? -.035 : event.key === 'ArrowRight' ? .035 : 0),.06,.94);

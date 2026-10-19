@@ -55,11 +55,11 @@ class Store:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
             if path.is_symlink() or not path.is_file():
-                raise ValueError("Pairing token must be a regular private file")
+                raise ValueError("Local authentication token must be a regular private file")
             os.chmod(path, 0o600)
             token = path.read_text().strip()
             if len(token) < 32:
-                raise ValueError("Pairing token file is invalid")
+                raise ValueError("Local authentication token file is invalid")
             return token
         token = secrets.token_urlsafe(32)
         with os.fdopen(fd, "w") as out:

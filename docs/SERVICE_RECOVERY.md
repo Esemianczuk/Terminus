@@ -1,6 +1,6 @@
 # Startup and automatic recovery
 
-Terminus keeps the organism core and desktop body in separate user processes. Restarting the body does not replace the private model or erase memory. Setup and updates preserve `.local/organism.sqlite3` and the pairing token.
+Terminus keeps the organism core and desktop body in separate user processes. Restarting the body does not replace the private model or erase memory. Setup and updates preserve `.local/organism.sqlite3` and the local authentication token.
 
 ```sh
 uv run python scripts/setup.py
@@ -21,7 +21,7 @@ The quiet guardian checks about every thirty seconds on Linux/macOS and every mi
 
 `WatchdogSec=45` detects a live process whose real event loop has stalled. The core reports health from its asyncio ticker, and the body from its Qt status timer. A separate health thread cannot hide a frozen loop. Normal reconnect logic handles a core restart without repeatedly restarting a responsive desktop.
 
-`terminus-presence.timer` runs a bounded guardian in addition to crash restart and watchdogs. A managed XDG login entry refreshes an allowlist of session/display connection variables, without copying the shell environment or pairing token. This also supports desktops whose `graphical-session.target` is inactive. Starting before graphical login depends on the user's systemd manager and any separately configured lingering; no system-wide service is installed.
+`terminus-presence.timer` runs a bounded guardian in addition to crash restart and watchdogs. A managed XDG login entry refreshes an allowlist of session/display connection variables, without copying the shell environment or local authentication token. This also supports desktops whose `graphical-session.target` is inactive. Starting before graphical login depends on the user's systemd manager and any separately configured lingering; no system-wide service is installed.
 
 ```sh
 systemctl --user status terminus-core.service terminus-desktop.service
@@ -36,15 +36,13 @@ Run setup while signed into the Mac desktop. It creates `org.terminus.core`, `or
 
 The same `scripts/servicectl.py` commands route to launchd. Logs are `.local/macos-core.log`, `.local/macos-desktop.log` and `.local/macos-presence.log`. The Cocoa panel is nonactivating and has no key/main-window eligibility; diagnostics report its actual focus state. Numerical-library thread pools are limited to one thread in the launch agents.
 
-The optional collective exchange adds `org.terminus.collective`, a ten-minute agent. It uses only the separate category model and contribution outbox and does not expose the local API to other computers.
-
 ## Windows
 
 The installer registers `core`, `desktop` and `presence` under `\Terminus\` in Task Scheduler. Jobs use the current user's InteractiveToken, least privilege and no stored password. They run only in that user's signed-in desktop session. Starting a GUI directly from SSH would put it in Session 0; these tasks avoid that.
 
 The core and desktop jobs restart after failure. A separate one-minute guardian checks owned process creation times, core health and the desktop heartbeat. Stop requests are handled by the real asyncio or Qt event loop. If an owned process remains wedged, recovery verifies its creation time on the same OS handle before terminating it. Other applications and other checkouts are left alone. Explicit stops write pause markers and are respected across job retries.
 
-The window uses `WS_EX_NOACTIVATE`, a `WM_MOUSEACTIVATE` guard and pointer hit testing on its own window. It does not install keyboard hooks. The Windows observer polls pointer and window geometry only; typing and microphone observation are unavailable. Logs are `.local/windows-*.log`. Optional collective and source-update tasks run every ten minutes and hourly respectively.
+The window uses `WS_EX_NOACTIVATE`, a `WM_MOUSEACTIVATE` guard and pointer hit testing on its own window. It does not install keyboard hooks. The Windows observer polls pointer and window geometry only; typing and microphone observation are unavailable. Logs are `.local/windows-*.log`. The optional source-update task runs hourly.
 
 [Windows installation and troubleshooting](SETUP.md#windows-10-or-11)
 

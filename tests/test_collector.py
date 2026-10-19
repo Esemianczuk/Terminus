@@ -14,10 +14,9 @@ def event(n):
     return {'id': str(n), 'kind': 'context', 'context': 'test', 'device_id': 'test-device', 'intensity': .5, 'source': 'manual'}
 
 
-def test_remote_token_transport_requires_https():
+def test_collector_can_only_connect_to_local_core():
     assert collector.normalized_url('http://127.0.0.1:8769/') == 'http://127.0.0.1:8769'
-    assert collector.normalized_url('https://pet.example.test') == 'https://pet.example.test'
-    for url in ['http://192.168.1.20:8769', 'https://user:secret@example.test', 'https://example.test?token=secret', 'file:///tmp/core']:
+    for url in ['http://192.168.1.20:8769', 'https://pet.example.test', 'https://user:secret@example.test', 'https://example.test?token=secret', 'file:///tmp/core']:
         with pytest.raises(ValueError):
             collector.normalized_url(url)
 

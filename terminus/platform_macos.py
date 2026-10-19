@@ -8,8 +8,9 @@ import shlex
 import subprocess
 import tempfile
 import time
+from .runtime import write_private
 
-LABELS={r:'org.terminus.'+r for r in ('core','desktop','presence','collective','updates')}
+LABELS={r:'org.terminus.'+r for r in ('core','desktop','presence','updates')}
 
 
 def domain():
@@ -102,7 +103,6 @@ def definition(role,root):
               'desktop':[python,str(root/'desktop/overlay.py'),'--renderer','auto','--data-dir',str(data),
                          '--status-file',str(data/'desktop-status.json'),'--capture-file',str(data/'desktop-presence.png')],
               'presence':[python,str(root/'scripts/bring_back.py'),'--guardian'],
-              'collective':[python,str(root/'scripts/collective.py'),'sync'],
               'updates':[python,str(root/'scripts/update.py'),'--automatic']}
     definition={'Label':LABELS[role],'ProgramArguments':commands[role],'WorkingDirectory':str(root),
                 'RunAtLoad':True,'LimitLoadToSessionType':'Aqua','ThrottleInterval':3,'ExitTimeOut':15,
@@ -113,7 +113,7 @@ def definition(role,root):
                 'StandardOutPath':str(data/('macos-'+role+'.log')),
                 'StandardErrorPath':str(data/('macos-'+role+'.log')),'Umask':63}
     if role in {'core','desktop'}:definition['KeepAlive']=True
-    else:definition['StartInterval']={'presence':30,'collective':600,'updates':3600}[role]
+    else:definition['StartInterval']={'presence':30,'updates':3600}[role]
     if role=='updates':definition['RunAtLoad']=False
     return definition
 
@@ -147,6 +147,8 @@ def install(root):
     root=Path(root).resolve();data=root/'.local';data.mkdir(exist_ok=True,mode=0o700)
     if call('print',domain(),check=False).returncode:
         raise ValueError('Sign into the macOS desktop before installing its launch agents.')
+    from scripts.retire_sharing import retire
+    retire(root)
     for role in ('core','desktop','presence'):
         path=paths(role)
         if path.exists() and plistlib.loads(path.read_bytes()).get('WorkingDirectory')!=str(root):
@@ -192,7 +194,6 @@ def guardian(root):
                 age=time.time()-view['updated_at'] if view.get('pid')==pid else 0
             except (OSError,ValueError,KeyError):age=0
             if age>50:call('kickstart','-k',domain()+'/'+LABELS[role])
-    from .collective import write_private
     write_private(failure_path,failures)
 
 

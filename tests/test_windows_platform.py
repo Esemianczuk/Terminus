@@ -1,5 +1,4 @@
 """Portable contract checks plus native locking tests on Windows CI."""
-import base64
 import json
 import subprocess
 import sys
@@ -9,7 +8,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from terminus import filelock,platform_windows as windows
 from terminus.runtime import python_path
-from scripts import collective,update
+from scripts import update
 
 
 def test_tasks_use_interactive_unprivileged_sessions_without_passwords(tmp_path,monkeypatch):
@@ -44,39 +43,9 @@ def test_lock_excludes_a_second_process_and_releases_on_close(tmp_path):
     assert subprocess.run([sys.executable,'-c',code,str(path)],capture_output=True).returncode==0
 
 
-def test_windows_relay_quotes_paths_and_uses_authenticated_ssh():
-    command=collective.relay_command({'ssh':'david@gaming-pc','root':"C:\\Users\\Someone's PC\\Terminus",'platform':'win32'})
-    assert command[:5]==['ssh','-o','BatchMode=yes','-o','ConnectTimeout=5']
-    decoded=base64.b64decode(command[-1].split()[-1]).decode('utf-16le')
-    assert "Someone''s PC" in decoded and '.venv\\Scripts\\python.exe' in decoded
-    assert decoded.endswith(' relay-export')
-    with pytest.raises(ValueError):collective.relay_command({'ssh':'-oProxyCommand=bad','root':'/tmp'})
-    with pytest.raises(ValueError):collective.relay_command({'ssh':'host','root':'relative','platform':'win32'})
-
-
-def test_legacy_peer_migration_and_unavailable_peers_are_independent(tmp_path,monkeypatch):
-    from terminus.collective import initial_bank,LocalLearner
-    learner=LocalLearner(initial_bank())
-    for _ in range(32):learner.observe('presence')
-    packet=learner.release()
-    config={'peer_ssh':'mac','peer_root':'/Users/test/Terminus',
-            'peers':[{'ssh':'windows','root':'C:\\Terminus','platform':'win32'}]}
-    assert len(collective.configured_peers(config))==2
-    monkeypatch.setattr(collective,'bank',lambda *_:initial_bank())
-    calls=[]
-    def run(command,**kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command,1 if command[-2]=='windows' else 0, json.dumps([packet]))
-    monkeypatch.setattr(collective.subprocess,'run',run)
-    assert collective.relay(tmp_path,config)==1 and len(calls)==2
-    assert json.loads(next((tmp_path/'collective-outbox').glob('*.json')).read_text())==packet
-    status=json.loads((tmp_path/'collective-relay-status.json').read_text())
-    assert [p['ok'] for p in status['peers']]==[False,True]
-
-
-def test_bank_and_document_changes_do_not_restart_the_creature():
-    assert not update.needs_rebuild(['community/bank.json','README.md','docs/SETUP.md'])
-    assert update.needs_rebuild(['community/bank.json','desktop/gpu.py'])
+def test_document_changes_do_not_restart_the_creature():
+    assert not update.needs_rebuild(['README.md','docs/SETUP.md'])
+    assert update.needs_rebuild(['desktop/gpu.py'])
     assert update.needs_rebuild(['uv.lock'])
 
 

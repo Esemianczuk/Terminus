@@ -1,6 +1,6 @@
 # Install Terminus
 
-Terminus runs as two small processes: a private organism core and a transparent desktop body. Each computer gets its own creature. The public memory bank and automatic source updates are separate options, both off until enabled.
+Terminus runs as two small processes: a private organism core and a transparent desktop body. Each computer gets its own creature and develops its own local memory. Automatic source updates are optional and off until enabled.
 
 You need Git, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/). Install into your own writable folder, outside a network share or a cloud-synced folder. Keep the `.local` folder when moving or updating an installation.
 
@@ -44,7 +44,7 @@ uv run python scripts/setup.py
 
 Run this while signed into the graphical desktop. Setup creates per-user launch agents, a nonactivating Metal window and **Bring Back Terminus.app**. No system daemon is installed. The resident body cannot appear at the login screen.
 
-Window geometry and pointer awareness work without reading text. Typing rhythm requires macOS Input Monitoring access. Use the creature's explicit permission menu command if you want it. Background color matching is a separate option that needs Screen Recording permission. Neither permission is required to run him or share category learning. Logs live in `.local/macos-*.log`.
+Window geometry and pointer awareness work without reading text. Typing rhythm requires macOS Input Monitoring access. Use the creature's explicit permission menu command if you want it. Background color matching is a separate option that needs Screen Recording permission. Neither permission is required to run him. Logs live in `.local/macos-*.log`.
 
 ## Linux
 
@@ -99,39 +99,6 @@ uv run python scripts/update.py --enable-auto
 uv run python scripts/update.py --status
 ```
 
-Disable them with `--disable-auto`. Each computer fetches GitHub independently. Updates follow `main`, require a clean checkout and a fast-forward, and never discard local commits or source edits. A SQLite backup is made before rebuilding. Bank-only and documentation-only changes advance the checkout without restarting the creature. Source changes rebuild and restore the installed services while preserving intentional pauses. A failed rebuild remains pending for a later retry; details are in `.local/update-status.json` and the OS job log.
+Disable them with `--disable-auto`. Each computer fetches GitHub independently. Updates follow `main`, require a clean checkout and a fast-forward, and never discard local commits or source edits. A SQLite backup is made before rebuilding. Documentation-only changes advance the checkout without restarting the creature. Source changes rebuild and restore the installed services while preserving intentional pauses. A failed rebuild remains pending for a later retry; details are in `.local/update-status.json` and the OS job log.
 
 The jobs are `terminus-updates.timer` on Linux, `org.terminus.updates` on macOS and `\Terminus\updates` on Windows. They need outbound HTTPS to GitHub and the Python package sources. They do not open an inbound port or wake a sleeping computer. Installing new code automatically means trusting this repository's maintainers; leave it off if you prefer reviewing updates yourself.
-
-## Optional shared memory
-
-Enable independent local learning and public-bank downloads:
-
-```sh
-uv run python scripts/collective.py enable
-uv run python scripts/collective.py sync
-uv run python scripts/collective.py status
-```
-
-No GitHub account or token is needed to read the bank. The scheduler exchanges about every ten minutes while the computer is awake and its user services can run. Offline operation uses the newest validated cached round. The desktop API stays on `127.0.0.1:8769`; do not expose that port to connect creatures.
-
-Publishing is a separate choice. A GitHub account with write access to the repository can install [GitHub CLI](https://cli.github.com/), run `gh auth login` on that machine, then enable publishing:
-
-```sh
-uv run python scripts/collective.py enable --publish
-```
-
-Other users can submit a validated outbox JSON from `.local/collective-outbox/` in a pull request under `community/contributions/`. Public does not mean anonymous write access. No shared write credential comes with the project.
-
-For several personal machines, one trusted publisher can relay the other learners' numerical packets. Configure SSH key access and verify the peers' host keys first. Run these on the publisher, using your actual aliases and checkout paths:
-
-```sh
-uv run python scripts/collective.py enable --publish --peer-ssh my-mac --peer-root /Users/me/Documents/Terminus
-uv run python scripts/collective.py enable --publish --peer-ssh my-windows --peer-root 'C:\Users\Me\Documents\Terminus' --peer-platform win32
-```
-
-Adding a peer preserves the existing peers. Enable ordinary collective learning on each peer too. Windows SSH must support PowerShell and the same user's checkout. The publisher retrieves only schema-validated numerical contributions; it never retrieves another creature's database, token, contexts or private model. `.local/collective-relay-status.json` records successful and deferred peers. A disconnected peer does not block the others.
-
-Across different networks, public-bank reads and direct GitHub publishing use HTTPS and need no LAN. An SSH relay needs a route to its peers, such as a trusted VPN or private mesh. Otherwise contributions wait locally until that route returns; neither SSH nor a home network is made publicly reachable by this setup.
-
-Disable exchange with `uv run python scripts/collective.py disable`. This stops exchange at the configuration gate and preserves the creature's ordinary local memory. See [the exact public format and its limits](COLLECTIVE_MEMORY.md).

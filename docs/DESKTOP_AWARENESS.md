@@ -38,13 +38,13 @@ microphone: {available, in_use}                  # no audio
 
 Window and pointer geometry stay in the native body. The only observations sent to the authenticated local core are rate-limited activity cues with fixed contexts: `typing`, `typing-pause`, `pointer`, `microphone` and `desktop`. They use the existing event kind, source, intensity and timestamp fields. A cue describes fresh real activity; failed connections do not queue observations for replay as current activity.
 
-The private learner can associate these activity categories with quiet intervals and occasionally respond between bouts. It cannot infer what was typed or spoken. The public collective learner still sees only the seven fixed event kinds, so these cues all reduce to the same `activity` category before a public contribution is constructed. Private geometry, precise pointer paths, contexts and timestamps never enter that learner.
+The local learner can associate these activity categories with quiet intervals and occasionally respond between bouts. It cannot infer what was typed or spoken. Private geometry and precise pointer paths stay in the desktop body; coarse activity cues reach only this computer's core.
 
 ## Optional background colors
 
 **Living skin → Match colors behind me** starts a separate disposable worker, at most twice per second. X11 samples small patches from existing compositor window pixmaps behind the creature, excluding his own process. macOS captures only the panel-sized region below his window, then reduces it through CoreGraphics to a two-by-two color field. macOS Screen Recording permission is required and requested only through **Allow screen colors...**. Native Wayland is unsupported and returns unavailable.
 
-Capture pixels exist briefly inside that worker. Only twelve RGB numbers cross its pipe. Neither pixels nor colors are written to disk or delivered to the organism, private predictor or collective learner. There is no OCR, title lookup or text extraction. The palette and confidence ease into the shader over time. Missing permission, stale samples or a worker timeout fade back to the authored palette. Turning the switch off kills the owned worker and clears the palette immediately. Background colors and the activity observer have separate switches.
+Capture pixels exist briefly inside that worker. Only twelve RGB numbers cross its pipe. Neither pixels nor colors are written to disk or delivered to the organism or its predictor. There is no OCR, title lookup or text extraction. The palette and confidence ease into the shader over time. Missing permission, stale samples or a worker timeout fade back to the authored palette. Turning the switch off kills the owned worker and clears the palette immediately. Background colors and the activity observer have separate switches.
 
 Coarse window geometry also supplies smooth local currents to the ink shader. That geometry stays in the body and is discarded on exit. No fluid effect can activate a window or intercept an input event.
 

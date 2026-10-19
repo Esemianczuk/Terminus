@@ -39,7 +39,7 @@ View preferences live separately in `.local/desktop.ini`. The default transparen
 
 X11 supplies window bounds, pointer motion and aggregate raw-keypress counts without key identities. macOS supplies on-screen window geometry and cursor position; aggregate typing pulses require an existing Input Monitoring grant, checked without requesting permission. Linux can query microphone-use metadata through `pactl`; no audio is recorded. Mac microphone-use metadata and native Wayland observation are unavailable. No titles, text, screenshots or accessible text anchors are read.
 
-Window rectangles and pointer geometry remain in the local renderer. Only rate-limited fixed activity labels and coarse intensity reach the private core. Sustained typing or microphone use can invite a waking visit; a pause can invite a short inspection. Hard visit budgets and cooldowns preserve rest. The optional public learner sees only the broad event category `activity`. [Observation boundaries](../docs/DESKTOP_AWARENESS.md) and [behavior](../docs/ETHOLOGY.md).
+Window rectangles and pointer geometry remain in the local renderer. Only rate-limited fixed activity labels and coarse intensity reach the private core. Sustained typing or microphone use can invite a waking visit; a pause can invite a short inspection. Hard visit budgets and cooldowns preserve rest. [Observation boundaries](../docs/DESKTOP_AWARENESS.md) and [behavior](../docs/ETHOLOGY.md).
 
 ## Diagnostics and development
 

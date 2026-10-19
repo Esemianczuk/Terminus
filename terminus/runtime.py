@@ -1,5 +1,6 @@
 """Paths shared by native installers and scheduled jobs."""
 import os
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -32,3 +33,12 @@ def find_git():
             path=Path(base)/'Git/cmd/git.exe'
             if path.is_file():return str(path)
     raise RuntimeError('Install Git before updating Terminus.')
+
+
+def write_private(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = path.with_suffix(path.suffix + '.tmp')
+    temporary.write_text(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n')
+    temporary.chmod(0o600)
+    temporary.replace(path)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -23,8 +24,12 @@ def normalized_url(url: str) -> str:
     p = urllib.parse.urlsplit(url)
     if p.scheme not in {'http', 'https'} or not p.hostname or p.username or p.password or p.query or p.fragment:
         raise ValueError('Use an HTTP(S) core URL without credentials, query or fragment')
-    if p.scheme == 'http' and p.hostname not in {'localhost', '127.0.0.1', '::1'}:
-        raise ValueError('Remote collectors require HTTPS (for example a private Tailscale HTTPS endpoint)')
+    try:
+        loopback = ipaddress.ip_address(p.hostname).is_loopback
+    except ValueError:
+        loopback = p.hostname.lower() == 'localhost'
+    if not loopback:
+        raise ValueError('The collector can connect only to the core on this computer')
     return url.rstrip('/')
 
 
@@ -104,7 +109,7 @@ def load_token(data_dir: Path) -> str:
     try:
         token = token_file.read_text().strip()
     except OSError:
-        raise SystemExit('Start the core first, or copy its token to your private --data-dir/token file.')
+        raise SystemExit('Start the local core first; its token stays in your private data directory.')
     if not token:
         raise SystemExit('Core token file is empty')
     return token

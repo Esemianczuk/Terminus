@@ -39,7 +39,7 @@ function browser(initialStorage={}) {
   const serverState=snapshot();
   storage.set('terminus.snapshot.v1',JSON.stringify({state:serverState,receivedAt:Date.now()}));
   const document={hidden:true,body:new Element(),querySelector(selector){if(!elements.has(selector))elements.set(selector,new Element());return elements.get(selector);},createElement:()=>new Element(),createElementNS:()=>new Element(),addEventListener(){}};
-  document.querySelector('#pairing').hidden=true;
+  document.querySelector('#local-only').hidden=true;
   const context=vm.createContext({
     console,Date,Math,JSON,Map,Set,Number,String,Array,Object,Boolean,Promise,Error,AbortSignal,document,
     navigator:{onLine:false},location:{protocol:'http:',host:'127.0.0.1:8769'},window:{devicePixelRatio:1,addEventListener(){}},
@@ -77,7 +77,7 @@ test('a cached offline reload can queue an explicit context without claiming aut
   await client.offerContext('Offline continuity check');
   assert.equal(client.readOutbox().length,1);
   assert.equal(client.requests.length,0);
-  assert.equal(client.element('#pairing').hidden,true);
+  assert.equal(client.element('#local-only').hidden,true);
   assert.equal(client.element('#connection').dataset.mode,'offline');
 });
 
@@ -88,9 +88,8 @@ test('confirmed 401 blocks additions and upload until a fresh authenticated stat
   await client.offerContext('Must not be queued');
   assert.equal(client.run('authenticated'),false);
   assert.equal(client.readOutbox().length,1);
-  assert.equal(client.element('#pairing').hidden,false);
+  assert.equal(client.element('#local-only').hidden,false);
   assert.equal(client.requests.filter(request=>request.url==='/api/events').length,0);
-  assert.equal(JSON.parse(client.storage.get('terminus.pairing-required')),true);
   await client.reconnect(200);
   assert.equal(client.requests.filter(request=>request.url==='/api/events').length,1);
   assert.equal(client.readOutbox().length,0);
@@ -100,7 +99,7 @@ test('local browser opens the habitat automatically after an unauthenticated sta
   const client=browser();
   await client.reconnect(401,200);
   assert.equal(client.run('authenticated'),true);
-  assert.equal(client.element('#pairing').hidden,true);
+  assert.equal(client.element('#local-only').hidden,true);
   assert.deepEqual(client.requests.map(request=>request.url).slice(0,3),
                    ['/api/state','/api/pair-local','/api/state']);
   assert.equal(client.requests.filter(request=>request.url==='/api/events').length,0);
@@ -157,16 +156,16 @@ test('optional sleep art cannot replace the fallback until both aligned poses lo
 test('service worker caches the final shell/art and never intercepts API or authentication',async()=>{
   const handlers=new Map();
   const cached=[];
-  const worker=vm.createContext({URL,Response,Promise,self:{location:{origin:'https://terminus.test'},addEventListener:(name,handler)=>handlers.set(name,handler),skipWaiting:async()=>{},clients:{claim:async()=>{}}},caches:{open:async()=>({addAll:async paths=>cached.push(...paths),add:async path=>cached.push(path)})}});
+  const worker=vm.createContext({URL,Response,Promise,self:{location:{origin:'http://127.0.0.1:8769'},addEventListener:(name,handler)=>handlers.set(name,handler),skipWaiting:async()=>{},clients:{claim:async()=>{}}},caches:{open:async()=>({addAll:async paths=>cached.push(...paths),add:async path=>cached.push(path)})}});
   vm.runInContext(workerSource,worker);
   let installation;
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
   for(const path of ['/index.html','/app.js','/styles.css','/assets/terminus-refined.png','/assets/terminus-sleep.png'])assert.ok(cached.includes(path));
   assert.ok(cached.every(path=>!path.startsWith('/api/')));
-  for(const [path,method] of [['/api/state','GET'],['/api/inspect','GET'],['/api/pair','POST'],['/api/events','POST'],['/ws','GET']]) {
+  for(const [path,method] of [['/api/state','GET'],['/api/inspect','GET'],['/api/pair-local','POST'],['/api/events','POST'],['/ws','GET']]) {
     let intercepted=false;
-    handlers.get('fetch')({request:{url:`https://terminus.test${path}`,method},respondWith(){intercepted=true;}});
+    handlers.get('fetch')({request:{url:`http://127.0.0.1:8769${path}`,method},respondWith(){intercepted=true;}});
     assert.equal(intercepted,false,`${method} ${path} must stay outside the shell cache`);
   }
 });

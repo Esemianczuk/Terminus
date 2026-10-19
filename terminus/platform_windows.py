@@ -15,10 +15,10 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-from .runtime import python_path
+from .runtime import python_path, write_private
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLES = ('core', 'desktop', 'presence', 'collective', 'updates')
+ROLES = ('core', 'desktop', 'presence', 'updates')
 
 
 def ps_string(value):
@@ -55,10 +55,10 @@ def definition(role, root, user):
     triggers = element(task, 'Triggers')
     logon = element(triggers, 'LogonTrigger')
     element(logon, 'Enabled', 'true'); element(logon, 'UserId', user)
-    if role in {'presence', 'collective', 'updates'}:
+    if role in {'presence', 'updates'}:
         trigger = element(triggers, 'TimeTrigger')
         repetition = element(trigger, 'Repetition')
-        element(repetition, 'Interval', {'presence':'PT1M', 'collective':'PT10M', 'updates':'PT1H'}[role])
+        element(repetition, 'Interval', {'presence':'PT1M', 'updates':'PT1H'}[role])
         element(repetition, 'StopAtDurationEnd', 'false')
         element(trigger, 'StartBoundary', datetime.now().isoformat(timespec='seconds'))
         element(trigger, 'Enabled', 'true')
@@ -245,9 +245,10 @@ $link.Save()
 
 
 def install(root):
-    from .collective import write_private
+    from scripts.retire_sharing import retire
     from .supervision import set_paused
     root=Path(root).resolve(); data=root/'.local'; data.mkdir(parents=True,exist_ok=True)
+    retire(root)
     for role in ('core','desktop','presence'): register(role,root)
     shortcut(root)
     write_private(data/'service-install.json',{'version':1,'root':str(root),'platform':'win32'})
