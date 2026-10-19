@@ -58,3 +58,19 @@ def test_macos_retirement_checks_arguments_before_unlink(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         retire_sharing.retire(root)
     assert path.exists()
+
+
+def test_windows_retirement_is_safe_to_repeat_without_an_old_task(tmp_path, monkeypatch):
+    from terminus import platform_windows as windows
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    scripts = []
+    monkeypatch.setattr(windows, 'powershell', lambda script: scripts.append(script))
+    root = tmp_path / 'Terminus'
+    data = root / '.local'
+    data.mkdir(parents=True)
+    (data / 'organism.sqlite3').write_bytes(b'private history')
+    retire_sharing.retire(root)
+    retire_sharing.retire(root)
+    assert len(scripts) == 2
+    assert all("Write-Output 'Exchange task checked.'" in script for script in scripts)
+    assert (data / 'organism.sqlite3').read_bytes() == b'private history'

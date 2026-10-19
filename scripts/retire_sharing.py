@@ -23,6 +23,7 @@ if ($task) {{
     if ($task.State -eq 'Running') {{ Stop-ScheduledTask -InputObject $task }}
     Unregister-ScheduledTask -InputObject $task -Confirm:$false
 }}
+Write-Output 'Exchange task checked.'
 """)
     elif sys.platform == 'darwin':
         path = Path.home() / 'Library/LaunchAgents/org.terminus.collective.plist'
