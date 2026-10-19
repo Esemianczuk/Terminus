@@ -64,7 +64,7 @@ GLYPH_PATHS = (
 )
 
 
-def validate_url(raw: str, *, explicit: bool) -> str:
+def validate_url(raw: str) -> str:
     """Native body and core must run on the same computer."""
     parsed = urlsplit(raw)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -159,7 +159,7 @@ class CoreClient(QtCore.QObject):
 
     def __init__(self, url: str, data_dir: Path, parent=None):
         super().__init__(parent)
-        self.url = url
+        self.url = validate_url(url)
         self.data_dir = data_dir
         identity = f"{uuid.getnode()}:{data_dir.resolve()}"
         self.device_id = "desktop-" + uuid.uuid5(uuid.NAMESPACE_URL, identity).hex[:12]
@@ -2131,7 +2131,7 @@ def main(argv=None):
     parser.add_argument("--smoke-test", action="store_true", help="Offscreen network + render check; exits without sending events")
     args = parser.parse_args(argv)
     try:
-        url = validate_url(args.url or DEFAULT_URL, explicit=args.url is not None)
+        url = validate_url(args.url or DEFAULT_URL)
     except ValueError as exc:
         parser.error(str(exc))
     if args.scale is not None and (not math.isfinite(args.scale) or not 0.65 <= args.scale <= 2):

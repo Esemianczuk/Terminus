@@ -72,6 +72,7 @@ class Outbox:
             self.db.execute('DELETE FROM outbox WHERE id NOT IN (SELECT id FROM outbox ORDER BY created DESC LIMIT 256)')
 
     def flush(self, url: str, token: str) -> int:
+        url = normalized_url(url)
         sent = 0
         with self.db:
             self.db.execute('DELETE FROM outbox WHERE created < ?', (time.time() - 86400,))

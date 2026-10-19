@@ -21,6 +21,15 @@ def test_collector_can_only_connect_to_local_core():
             collector.normalized_url(url)
 
 
+def test_outbox_refuses_remote_destination_before_reading_events(tmp_path):
+    queue = collector.Outbox(tmp_path / 'outbox.db')
+    queue.add(event(1))
+    with patch.object(collector.urllib.request, 'urlopen') as send:
+        with pytest.raises(ValueError):
+            queue.flush('https://pet.example.test', 'local-token')
+        send.assert_not_called()
+
+
 def test_outbox_is_bounded_deduplicated_and_replayed(tmp_path):
     queue = collector.Outbox(tmp_path / 'outbox.db')
     for n in range(300):
