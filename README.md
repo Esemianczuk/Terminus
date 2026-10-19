@@ -1,12 +1,28 @@
 # Terminus
 
-A small cuttlefish who lives on your desktop and minds his own business. Mostly.
+A cute little cosmic horror, a Cthulhu-inspired Codex pet who found his way onto my desktop between prompts.
 
-![Terminus resting, swimming and changing color on his memory graph](docs/screenshots/terminus.gif)
+## How he got here
 
-He naps on a glowing graph, reaches toward things that hold his attention, and sometimes wanders off to inspect a corner of the screen. His eyes can follow the pointer, study a graph node, or settle into a private little stare. Carry him around and he swims. His skin shifts through shimmer, moving bands of color, camouflage and a deep red display. A sustained spell of typing can wake him; a pause can send him out for a small look around. He occasionally leaves a few signs in a made-up language.
+Terminus started with [a prompt to make my Codex pet](https://chatgpt.com/share/6ad16a28-23c0-83ea-bf9b-d18c26b81236). I wanted something cute and a little unsettling, somewhere between a cuttlefish, an octopus and a tiny Cthulhu. I work with graph theory a lot, so I gave him a network to lounge on. In my head it goes on in both directions without a natural end. He floats just outside it, a dimension up, lazily holding a few nodes and poking at others.
 
-There is a little learning behind it. Repeated events become familiar. A small recurrent model learns short event patterns, and connections in the graph influence where his attention goes. He keeps that history between runs. The animations give those changes a body.
+That is where the name came from. A *terminus* is the end of a route. Here is this little creature defining an endpoint for a graph that should not have one.
+
+| The original Codex pet | Desktop renderer preview |
+| --- | --- |
+| ![The original blue and violet tentacled Codex pet](docs/screenshots/original-codex-pet.png) | ![Terminus resting, swimming and changing color on his graph](docs/screenshots/terminus.gif) |
+
+I found myself looking at him between prompts, clicking him, dragging him around and waiting to see what he would do. Programming takes a lot of creativity, and sometimes a small, strange thing at the edge of the screen is enough to spark an idea. But the first pet was limited. Once I knew its moves, I could see the loop.
+
+I wanted to keep *this* creature and give him more of a life on the actual desktop: room to notice things, develop habits, surprise me occasionally and go back to sleep. That became this project.
+
+## What he does
+
+He rests on a glowing graph, reaches toward nodes that draw his attention, and wanders off to inspect the desktop. The graph shows his contexts and associations, with light moving along its connections. His eyes can follow the pointer, converge when he looks nearby, study a node or simply look where he wants. Pick him up and he swims in the direction you carry him. His skin shimmers, ripples through color, borrows colors from the desktop on supported systems when you enable that sensor, or turns deep red. Sometimes he dissolves into symbols or releases a slow cloud of ink. He has a small invented language, and he is allowed to be quiet.
+
+A private recurrent model learns short patterns in categories of events; familiarity and connections in his graph help steer attention and behavior. His poses, temperament and gestures are carefully made, while the timing and choices can change with experience. He keeps his local history between runs. The learning is small and specific: he can develop familiar responses, but he does not read or understand my work.
+
+There is also an optional [public memory bank](#a-shared-memory-bank) so creatures on different machines can share a little of what they learn. Each machine reduces eligible events to seven fixed categories locally and contributes clipped numerical weight updates to a separate model. The public bank contains no words, key identities, window titles, files or event logs. Your own creature's detailed history stays on your computer. The bank does not offer a formal privacy guarantee; [the format and its limits](docs/COLLECTIVE_MEMORY.md) are open to inspect.
 
 ## Install
 
