@@ -6,6 +6,32 @@ import math
 from desktop.graph_motion import spring
 
 
+class FacingFocus:
+    """Hold a look direction through small target motion and attention jitter."""
+
+    def __init__(self):
+        self.candidate = None
+        self.since = -math.inf
+
+    def choose(self, now, target_x, body_x, scale, facing):
+        if target_x is None:
+            self.candidate = None
+            return None
+        delta = target_x - body_x
+        threshold = 72. * scale
+        direction = (1 if delta > threshold else -1 if delta < -threshold else facing)
+        if direction == facing:
+            self.candidate = None
+            return facing
+        if direction != self.candidate:
+            self.candidate = direction
+            self.since = now
+        if now - self.since >= .36:
+            self.candidate = None
+            return direction
+        return facing
+
+
 class DirectionalMotion:
     """Add continuous pitch/roll and a soft turn follow-through to key poses.
 
@@ -21,7 +47,7 @@ class DirectionalMotion:
         self.turn_amount=0.
         self.settling=False
 
-    def sample(self, now, vx, vy, *, facing=1, active=0., reduced_motion=False, frozen=False):
+    def sample(self, now, vx, vy, *, facing=1, active=0., look=0., reduced_motion=False, frozen=False):
         dt=0. if self.last_at is None else max(0.,min(.25,now-self.last_at))
         self.last_at=now
         facing=-1 if facing<0 else 1
@@ -45,7 +71,7 @@ class DirectionalMotion:
         # rotation keeps the artwork, eye orbits and physical roots registered.
         roll=math.tanh(vx/235.)*8.5
         pitch=math.degrees(math.atan2(vy,90.+abs(vx)))*.18*facing
-        target=max(-12.,min(12.,roll+pitch))
+        target=max(-12.,min(12.,roll+pitch+max(-4.,min(4.,look))))
         age=max(0.,now-self.turn_at)
         if age<1.5:
             t=age/.20

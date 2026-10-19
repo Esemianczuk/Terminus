@@ -64,7 +64,7 @@ His skin can also dissolve partly into ASCII, or become a whole little creature 
 
 **Bring Back Terminus** checks both services and restores him if needed. Background checks also recover stopped or frozen processes. An explicit Quit or stop is respected until you bring him back.
 
-The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Each connection keeps its own continuous travel phase, so a burst of activity brightens the flow without teleporting it. Their exact timing is animation, not a literal trace of each calculation. His body can bank and turn while the graph stays upright.
+The graph shows memory contexts and their associations. Brighter nodes are active; stronger connections draw more clearly. One tentacle follows attention and others find supporting nodes. Reaches linger before settling back, and the graph eases into changes with him. The moving lights express activity on those connections. Each connection keeps its own continuous travel phase, so a burst of activity brightens the flow without teleporting it. Their exact timing is animation, not a literal trace of each calculation. When his eyes settle on something, he keeps facing it and turns his body a little too. His tentacles flex between him and the nodes while the graph stays upright.
 
 ![Camouflage, partial ASCII and a drifting ink cloud in a controlled renderer preview](docs/screenshots/living-displays.gif)
 

@@ -25,6 +25,7 @@ class GazeController:
         self.rest = (0., 0.)
         self.rest_mode = "rest"
         self.mode = "rest"
+        self.world_target = None
         self.settling = False
         self._goal = self.shift
         self._saccade_start = self.shift
@@ -53,6 +54,7 @@ class GazeController:
             self.shift = self._goal = (0., 0., 0., 0.)
             self._saccade_duration = 0.
             self.mode = "reduced-motion"
+            self.world_target = None
             self.settling = False
             self.forget_pointer()
             return self.shift
@@ -95,6 +97,7 @@ class GazeController:
         if sleeping:
             desired = (0., 0., 0., 0.)
             self.mode = "sleep"
+            target = None
         elif target is None:
             x, y = self.rest
             desired = (x*3.3, y*2.1, x*3.3, y*2.1)
@@ -128,6 +131,10 @@ class GazeController:
             proximity = max(0., min(1., (.84-math.hypot(wx, wy)/max(1., bw))/.63))
             convergence = proximity*proximity*(3.-2.*proximity)*.72
             desired = (x*3.6+convergence, y*2.5, x*3.6-convergence, y*2.5)
+
+        # The body may follow the same committed world target as the irises.
+        # Autonomous glances without a world point never command a body turn.
+        self.world_target = target
 
         change = max(abs(want-old) for want, old in zip(desired, self._goal))
         if ((self.mode != old_mode or change > 1.65)

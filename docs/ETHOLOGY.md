@@ -20,7 +20,7 @@ The authored stretch and yawn sequences play at 2.6 times their source duration 
 
 The graph remains ephemeral. Soft branches and pulses are driven by actual node/edge state; contact pearls support the body; glyphs arrive from core utterances. There is no permanent status panel. Empty transparent space passes clicks through.
 
-Desktop paths make deliberate excursions around the available monitor. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. When desktop awareness is enabled, some exploration paths can inspect a focused window's edge using its rectangle. Window content and screen images are not sampled. Actual movement drives directional swimming and instant facing changes.
+Desktop paths make deliberate excursions around the available monitor. Motion accelerates and settles, stays within bounds, and pauses for hover, dragging, menus, rest, reduced-motion preference or stale/degraded core state. When desktop awareness is enabled, some exploration paths can inspect a focused window's edge using its rectangle. Window content and screen images are not sampled. Actual dragging still flips the body immediately. During a held gaze at a pointer, window or graph node, the body keeps that facing through small target motion and turns a few degrees toward it. The graph remains in world coordinates. Each tentacle is an endpoint-constrained cubic: its registered body root and graph-node tip are exact, while only its internal handles have bounded spring follow-through.
 
 ## Real observations and history
 

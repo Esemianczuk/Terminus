@@ -1,6 +1,6 @@
 import pytest
 
-from desktop.directional_motion import DirectionalMotion
+from desktop.directional_motion import DirectionalMotion, FacingFocus
 
 
 def settle(vx,vy,facing=1):
@@ -49,3 +49,25 @@ def test_fixed_heading_uses_frame_rate_independent_spring():
     for i in range(1,31):a.sample(i/30,200.,-80.)
     for i in range(1,61):b.sample(i/60,200.,-80.)
     assert a.bank==pytest.approx(b.bank,abs=1e-12)
+
+
+def test_facing_holds_a_world_target_through_velocity_and_center_jitter():
+    focus=FacingFocus()
+    assert focus.choose(0., 260., 200., 1., 1.) == 1.
+    assert focus.choose(.4, 260., 200., 1., 1.) == 1.  # Within the dead zone.
+    assert focus.choose(.5, 100., 200., 1., 1.) == 1.
+    assert focus.choose(.9, 100., 200., 1., 1.) == -1.
+    for target in (190., 210., 170., 230., 199.):
+        assert focus.choose(1., target, 200., 1., -1.) == -1.
+    assert focus.choose(1.2, 300., 200., 1., -1.) == -1.
+    assert focus.choose(1.6, 300., 200., 1., -1.) == 1.
+    assert focus.choose(2., None, 200., 1., 1.) is None
+
+
+def test_body_leans_toward_a_held_look_and_eases_back():
+    motion=DirectionalMotion()
+    values=[motion.sample(i/60,0.,0.,look=3.5) for i in range(61)]
+    assert 2.5 < values[-1] < 3.6
+    assert max(abs(b-a) for a,b in zip(values,values[1:])) < .3
+    for i in range(61,181): motion.sample(i/60,0.,0.,look=0.)
+    assert abs(motion.bank)<.03

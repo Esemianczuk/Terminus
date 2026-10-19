@@ -32,6 +32,7 @@ class GazeControllerTests(unittest.TestCase):
         self.assertNotEqual(gaze.mode, "pointer")
         gaze.update(.125, body=self.BODY, screen=self.SCREEN, pointer=(.601, .4, 0.))
         self.assertEqual(gaze.mode, "pointer")
+        self.assertIsNotNone(gaze.world_target)
         self.assertTrue(gaze.settling)
         # A reused aggregate motion flag is not a new movement.
         for step in range(1, 9):
@@ -97,6 +98,7 @@ class GazeControllerTests(unittest.TestCase):
         gaze.update(2., body=self.BODY, screen=self.SCREEN, sleeping=True)
         self.assertFalse(gaze.settling)
         self.assertEqual(gaze.mode, "sleep")
+        self.assertIsNone(gaze.world_target)
 
     def test_native_pointer_query_requires_enabled_fresh_observation(self):
         fake = SimpleNamespace(
@@ -141,6 +143,7 @@ class GazeControllerTests(unittest.TestCase):
         fake = SimpleNamespace(gpu_scene=SimpleNamespace(available=True), reduced_motion=False,
                                fresh=lambda now: True, gaze=SimpleNamespace(settling=True),
                                directional_motion=SimpleNamespace(settling=False),
+                               tendril_motion=SimpleNamespace(settling=False),
                                skin=SimpleNamespace(effect_uniforms=lambda:{}),
                                graph_motion=SimpleNamespace(settling=False), hovering=False,
                                press_global=None, touch_started=-math.inf, gesture=lambda now: None,

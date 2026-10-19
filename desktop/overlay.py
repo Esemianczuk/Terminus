@@ -21,7 +21,8 @@ if str(REPO_ROOT) not in sys.path:sys.path.insert(0,str(REPO_ROOT))
 from PySide6 import QtCore, QtGui, QtNetwork, QtSvg, QtWidgets
 from terminus.supervision import notify,set_paused
 from desktop.graph_motion import GraphMotion
-from desktop.directional_motion import DirectionalMotion
+from desktop.directional_motion import DirectionalMotion, FacingFocus
+from desktop.tendril_motion import TendrilMotion
 from desktop.background import BackgroundSampler
 from desktop.window_field import WindowField
 from desktop.gaze import GazeAtlas, GazeController, compose_eye_layers
@@ -344,6 +345,9 @@ class Overlay(QtWidgets.QWidget):
         self.flight_strength = 0.
         self.flight_bank = 0.
         self.directional_motion = DirectionalMotion()
+        self.facing_focus = FacingFocus()
+        self.tendril_motion = TendrilMotion()
+        self.tendril_sides = {}
         self.facing = self.facing_target = 1.
         self.facing_mode = self.preferences.value("facing", "automatic")
         if self.facing_mode not in {"left", "right", "automatic"}:
@@ -885,6 +889,7 @@ class Overlay(QtWidgets.QWidget):
     def tendril_geometry(self, points, now):
         """Connect the body to actual attention/activation nodes, not fake targets."""
         if not points:
+            self.tendril_motion.update(now, {}, frozen=True)
             return []
         nodes = {n["id"]: n for n in self.state["nodes"]}
         attention = self.state.get("attention")
@@ -923,12 +928,16 @@ class Overlay(QtWidgets.QWidget):
         if not selected:
             selected = ranked[:1]
         rect = self.creature_rect
+        guides = {}
+        roots = []
         gestures = []
         elapsed = now - self.started if self.fresh(now) else max(0, self.last_live_frame - self.started)
         pose = self.pose(now)
         for index, key in enumerate(selected[:3]):
             target = points[key]
-            side = -1 if target.x() < center.x() else 1
+            delta_x = target.x() - center.x()
+            side = self.tendril_sides.get(key, 1 if delta_x >= 0 else -1) if abs(delta_x) < 24 else (1 if delta_x >= 0 else -1)
+            self.tendril_sides[key] = side
             # Flight raises the attachment points into the opaque mantle/arm
             # junction. Apply the exact body turn/bank transform to each root;
             # the actual graph contact stays in world coordinates.
@@ -953,11 +962,28 @@ class Overlay(QtWidgets.QWidget):
             trail = QtCore.QPointF(max(-22, min(22, -pose["flight_x"] * .035)),
                                    max(-14, min(14, -pose["flight_y"] * .025)))
             tapping = math.sin(pose["typing_phase"] * 8 + index * 2.5) * pose["typing"]
+            span = target - start
+            distance = max(1., math.hypot(span.x(), span.y()))
+            direction = span / distance
+            # A two-ended cubic is the natural flexible-limb analogue of IK:
+            # the graph tip and transformed body root are hard constraints.
+            # Only the two internal handles have elastic follow-through.
+            sway = math.tanh(span.x() / 42.)
+            root_length = min(76., max(28., distance * .36))
+            tip_length = min(58., max(20., distance * .26))
+            guides[key] = (
+                direction.x() * root_length + sway * (reach - curl) * .38 + trail.x(),
+                direction.y() * root_length * .66 + 10 + gesture - pose["stretch"] * 18 - tapping * 7 + trail.y(),
+                -direction.x() * tip_length - sway * curl * .35,
+                -direction.y() * tip_length * .38 + 15 + gesture - reach * .45 + curl * .4 + tapping * 3)
+            roots.append((key, start, target, active))
+        handles = self.tendril_motion.update(now, guides, reduced_motion=self.reduced_motion,
+                                             frozen=not self.fresh(now))
+        self.tendril_sides = {key: self.tendril_sides[key] for key in guides}
+        for key, start, target, active in roots:
+            x0, y0, x1, y1 = handles[key]
             curve = QtGui.QPainterPath(start)
-            curve.cubicTo(start + QtCore.QPointF(side * (32 + active * 18 + reach - curl),
-                                                14 + gesture - pose["stretch"] * 18 - tapping * 7) + trail,
-                          target + QtCore.QPointF(-side * (24 + active * 12 + curl),
-                                                 20 + gesture - reach + curl + tapping * 3), target)
+            curve.cubicTo(start + QtCore.QPointF(x0, y0), target + QtCore.QPointF(x1, y1), target)
             gestures.append((key, curve, active))
         return gestures
 
@@ -1426,7 +1452,7 @@ class Overlay(QtWidgets.QWidget):
         if self.gpu_scene is not None and self.gpu_scene.available:
             if self.reduced_motion:return 250
             if not self.fresh(now):return 500
-            if self.gaze.settling or self.directional_motion.settling:return 33
+            if self.gaze.settling or self.directional_motion.settling or self.tendril_motion.settling:return 33
             display=self.skin.effect_uniforms()
             if display.get("ink",0)>0 or .005<display.get("ascii",0)<.995:return 33
             if self.graph_motion.settling:return 33
@@ -1450,7 +1476,7 @@ class Overlay(QtWidgets.QWidget):
                 # speed just because the next source frame is near its boundary.
                 floor = 250 if (self.state or {}).get("behavior") in {"sleep","dream"} else 125
                 interval = max(interval, floor)
-        if not self.reduced_motion and self.fresh(now) and (self.gaze.settling or self.graph_motion.settling or self.directional_motion.settling):
+        if not self.reduced_motion and self.fresh(now) and (self.gaze.settling or self.graph_motion.settling or self.directional_motion.settling or self.tendril_motion.settling):
             interval = min(interval,50 if sys.platform == "darwin" else 33)
         return interval
 
@@ -1509,11 +1535,24 @@ class Overlay(QtWidgets.QWidget):
             strength = max(strength, min(.32, speed / 70))
         self.flight_strength += (strength - self.flight_strength) * (1 - math.exp(-dt / .22))
 
+        focus = self.gaze.world_target if self.fresh(now) and (self.state or {}).get("behavior") not in {"sleep", "dream"} else None
+        if focus is not None and not dragging:
+            body_x = self.x() + self.creature_rect.center().x() * self.scale
+            focused = self.facing_focus.choose(now, focus[0], body_x, self.scale, self.facing_target)
+            look = 3.6 * math.tanh((focus[0] - body_x) / max(1., self.creature_rect.width() * self.scale * 1.25))
+        else:
+            focused = self.facing_focus.choose(now, None, 0., self.scale, self.facing_target)
+            look = 0.
         desired = self.facing_target
         if self.facing_mode in {"left", "right"}:
             desired = -1. if self.facing_mode == "left" else 1.
-        elif abs(self.drag_velocity.x() if dragging else self.flight_velocity.x()) > 9:
-            direction = self.drag_velocity.x() if dragging else self.flight_velocity.x()
+        elif dragging and abs(self.drag_velocity.x()) > 9:
+            direction = self.drag_velocity.x()
+            desired = 1. if direction > 0 else -1.
+        elif focused is not None:
+            desired = focused
+        elif abs(self.flight_velocity.x()) > 9:
+            direction = self.flight_velocity.x()
             desired = 1. if direction > 0 else -1.
         elif not dragging and now - self.last_facing_change > 1.2:
             inspection = self.inspection_target(now)
@@ -1532,8 +1571,9 @@ class Overlay(QtWidgets.QWidget):
             self.last_facing_change = now
         self.facing = self.facing_target
         self.flight_bank = self.directional_motion.sample(
-            now,self.flight_velocity.x(),self.flight_velocity.y(),
-            facing=self.facing_target,active=self.flight_strength,frozen=not self.fresh(now))
+            now,self.flight_velocity.x() if dragging or focus is None else self.flight_velocity.x() * .25,
+            self.flight_velocity.y(),facing=self.facing_target,active=self.flight_strength,
+            look=look,frozen=not self.fresh(now))
 
         gesture = self.gesture(now)
         imitate = (gesture and gesture.get("kind") == "imitate" and self.typing_recent(now)
@@ -1840,6 +1880,7 @@ class Overlay(QtWidgets.QWidget):
         if mode not in {"left", "right", "automatic"}:
             return
         self.facing_mode = mode
+        self.facing_focus.choose(time.monotonic(), None, 0., self.scale, self.facing_target)
         if mode != "automatic":
             self.facing_target = -1. if mode == "left" else 1.
         self.last_facing_change = -math.inf

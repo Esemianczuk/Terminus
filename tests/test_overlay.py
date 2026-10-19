@@ -352,6 +352,33 @@ class OverlayTests(unittest.TestCase):
         for key, path, _ in widget.tendril_geometry(widget.graph_points, now):
             self.assertEqual(path.pointAtPercent(1), original_points[key])
 
+    def test_held_gaze_turns_body_while_graph_and_contacts_stay_put(self):
+        widget = self.widget()
+        widget.receive_state(self.snapshot())
+        now = widget.last_seen
+        _, points = widget.scene_geometry(now)
+        original_points = dict(points)
+        target_x = widget.x() + widget.creature_rect.center().x() * widget.scale - 240
+        widget.gaze.world_target = (target_x, widget.y() + 140 * widget.scale)
+        widget.flight_velocity = OVERLAY.QtCore.QPointF(90, 0)
+        for step in range(1, 46):
+            widget.advance_presentation(now + step / 60, 1 / 60)
+        self.assertEqual(widget.facing_target, -1.)
+        self.assertLess(widget.flight_bank, -1.)
+        _, points = widget.scene_geometry(now + .76)
+        self.assertEqual(points, original_points)
+        first = widget.tendril_geometry(points, now + .76)
+        for key, path, _ in first:
+            self.assertEqual(path.pointAtPercent(1), points[key])
+        widget.gaze.world_target = (widget.x() + widget.creature_rect.center().x() * widget.scale - 10, widget.y() + 140)
+        widget.flight_velocity = OVERLAY.QtCore.QPointF(120, 0)
+        for step in range(46, 90):
+            widget.advance_presentation(now + step / 60, 1 / 60)
+        self.assertEqual(widget.facing_target, -1.)
+        self.assertEqual(widget.graph_points, original_points)
+        for key, path, _ in widget.tendril_geometry(points, now + 1.5):
+            self.assertEqual(path.pointAtPercent(1), points[key])
+
     def test_drag_reversal_mirrors_on_the_mouse_event_even_with_reduced_motion(self):
         for reduced in (False, True):
             with self.subTest(reduced_motion=reduced):
